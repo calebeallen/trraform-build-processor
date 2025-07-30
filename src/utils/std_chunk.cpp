@@ -8,3 +8,6 @@
 // update (overrides)
 //      packs plot data into chunk and uploads it to r2. Front-end handles decoding.
 // set plot
+#include "chunk_std.hpp"
+
+
