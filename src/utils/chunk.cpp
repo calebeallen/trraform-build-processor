@@ -1,11 +1,23 @@
-#include "chunk.hpp"
-#include <opencv2/core.hpp>
 #include <array>
 #include <string>
 #include <iostream>
 #include <sstream>
 #include <fstream>
 #include <vector>
+#include <cstdint>
+#include <iterator>
+#include <stdexcept>
+#include <algorithm>
+
+#include <opencv2/core.hpp>
+#include <aws/s3/S3Client.h>
+#include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/PutObjectRequest.h>
+#include <aws/core/utils/memory/stl/AWSStreamFwd.h> 
+
+#include "constants.hpp"
+#include "chunk.hpp"
+#include "cf_util.hpp"
 
 
 // basic function for loading, uploading, encoding, decoding lowres chunks
@@ -144,6 +156,107 @@ Chunk::Chunk(const std::string id) {
     load();
 
 }
+
+void Chunk::downloadParts(){
+
+    // get chunk from cf
+    Aws::S3::Model::GetObjectRequest req;
+    req.SetBucket(VARS::CF_CHUNKS_BUCKET);
+    req.SetKey(chunkId(layer, locId));
+
+    auto res = r2Cli->GetObject(req);
+    if (!res.IsSuccess()) 
+        return;
+
+    auto& body = res.GetResult().GetBody();
+    std::vector<uint8_t> data(
+        (std::istreambuf_iterator<char>(body)),
+        std::istreambuf_iterator<char>()
+    );
+
+    // decode into parts
+    size_t i = 0, n = data.size();
+    while (i < n) {
+        if (i + 4 > n)
+            throw std::runtime_error("Not enough bytes to read key");
+
+        // read key (32 bit int little endian)
+        uint32_t key =
+            static_cast<uint32_t>(data[i]) |
+            (static_cast<uint32_t>(data[i + 1]) << 8) |
+            (static_cast<uint32_t>(data[i + 2]) << 16) |
+            (static_cast<uint32_t>(data[i + 3]) << 24);
+        i += 4;
+
+        // read part len metadata (32 bit int little endian)
+        uint32_t partLen =
+            static_cast<uint32_t>(data[i]) |
+            (static_cast<uint32_t>(data[i + 1]) << 8) |
+            (static_cast<uint32_t>(data[i + 2]) << 16) |
+            (static_cast<uint32_t>(data[i + 3]) << 24);
+        i += 4;
+
+        if (i + partLen > n)
+            throw std::runtime_error("Not enough bytes to read value");
+
+        std::vector<uint8_t> part(data.begin() + i, data.begin() + i + partLen);
+        i += partLen;
+
+        parts[key] = std::move(part);
+    }
+
+}
+
+
+void Chunk::uploadParts(){
+
+    // encode parts
+    size_t dataSize = 0;
+    for(auto& [key, part] : parts)
+        dataSize += 8 + part.size();
+
+    std::vector<uint8_t> data(dataSize);
+    size_t i = 0;
+    for(auto& [key, part] : parts){
+
+        // set key
+        data[i] = static_cast<uint8_t>(key & 0xFF);
+        data[i+1] = static_cast<uint8_t>((key >> 8) & 0xFF);
+        data[i+2] = static_cast<uint8_t>((key >> 16) & 0xFF);
+        data[i+3] = static_cast<uint8_t>((key >> 24) & 0xFF);
+        i += 4;
+
+        // set part len metadata
+        size_t partLen = part.size();
+        data[i] = static_cast<uint8_t>(partLen & 0xFF);
+        data[i+1] = static_cast<uint8_t>((partLen >> 8) & 0xFF);
+        data[i+2] = static_cast<uint8_t>((partLen >> 16) & 0xFF);
+        data[i+3] = static_cast<uint8_t>((partLen >> 24) & 0xFF);
+        i += 4;
+
+        // set part
+        std::copy(part.begin(), part.end(), data.begin() + i);
+        i += partLen;
+
+    }
+    
+    // upload to cf
+    auto stream = Aws::MakeShared<Aws::StringStream>("PutObjectInputStream");
+    stream->write(reinterpret_cast<const char*>(data.data()), data.size());
+
+    Aws::S3::Model::PutObjectRequest req;
+    req.SetBucket(VARS::CF_CHUNKS_BUCKET);
+    req.SetKey(chunkId(layer, locId));
+    req.SetBody(stream);
+    req.SetContentLength(data.size());
+    req.SetContentType("application/octet-stream"); 
+
+    auto res = r2Cli->PutObject(req);
+    if (!res.IsSuccess())
+        throw std::runtime_error("R2 PutObject failed: " + res.GetError().GetMessage());
+
+}
+
 
 void Chunk::load(){
 

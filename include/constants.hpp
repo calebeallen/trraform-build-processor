@@ -1,8 +1,6 @@
 #pragma once
 #include <string>
 
-using namespace std;
-
 namespace VARS{
-    inline const string s("esfsdf");
+    inline const std::string CF_CHUNKS_BUCKET("chunks");
 };

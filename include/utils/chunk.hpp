@@ -12,11 +12,15 @@ inline constexpr float PC_SAMPLE_PERC = 0.1F;
 
 class Chunk{
 
-private:
+protected:
     std::unordered_map<int,cv::Mat> childPointClouds;
+    std::unordered_map<int,std::vector<uint8_t>> parts; 
 
     int layer;
     int locId;
+
+    void downloadParts();
+    void uploadParts();
 
 public:
     static const std::vector<int>& getMappedFwd(const int, const int);
