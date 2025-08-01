@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include <unordered_map>
+#include <tuple>
 
 #include <opencv2/core/mat.hpp>
 
@@ -13,11 +14,10 @@ inline constexpr float PC_SAMPLE_PERC = 0.1F;
 class Chunk{
 
 protected:
-    std::unordered_map<int,cv::Mat> childPointClouds;
+    std::vector<int> needsUpdate;
+    std::unordered_map<int,cv::Mat> pointClouds;
     std::unordered_map<int,std::vector<uint8_t>> parts; 
-
-    int layer;
-    int locId;
+    std::string chunkId;
 
     void downloadParts();
     void uploadParts();
@@ -25,9 +25,10 @@ protected:
 public:
     static const std::vector<int>& getMappedFwd(const int, const int);
     static const int getMappedBwd(const int, const int);
-    static const std::string chunkId(const int, const int);
+    static std::string makeChunkIdStr(const int, const int, const bool);
+    static const std::tuple<int,int> parseChunkIdStr(const std::string&);
 
-    Chunk(const std::string);
+    Chunk(const std::string&);
 
     virtual void load();
     void save();
