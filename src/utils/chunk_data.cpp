@@ -1,42 +1,21 @@
-#include <array>
-#include <string>
-#include <iostream>
-#include <sstream>
 #include <fstream>
-#include <vector>
-#include <cstdint>
-#include <iterator>
-#include <stdexcept>
-#include <algorithm>
-#include <tuple>
 #include <format>
+#include <sstream>
+#include <tuple>
+#include <array>
+#include <stdexcept>
+#include <cstdint>
 
-#include <opencv2/core.hpp>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h> 
 
 #include "constants.hpp"
-#include "chunk.hpp"
+#include "chunk_data.hpp"
 #include "cf_util.hpp"
 
-
-// basic function for loading, uploading, encoding, decoding lowres chunks
-// stores point clouds for each child chunk
-// stores id
-// stores layer
-// constructor calls load
-// load
-//      use chunk map (depending on layer) to get child ids for chunk id
-//      load all of the point clouds for child chunk ids from fs in memory
-// update
-//      run kmeans on point clouds, saves box geometry data to r2 bucket
-// save
-//      samples points and saves them to fs under chunk id (unless layer 0)
-
-// map from child id -> parent id
-const int Chunk::getMappedBwd(const int layer, const int locId){
+const int ChunkData::getMappedBwd(const int layer, const int locId){
 
     if(layer == 0)
         return 0;
@@ -80,7 +59,7 @@ const int Chunk::getMappedBwd(const int layer, const int locId){
 }
 
 // map from parent id -> child ids
-const std::vector<int>& Chunk::getMappedFwd(const int layer, const int locId){
+const std::vector<int>& ChunkData::getMappedFwd(const int layer, const int locId){
 
     if(layer == 0){
         static const std::vector<int> entry = []() {
@@ -134,13 +113,13 @@ const std::vector<int>& Chunk::getMappedFwd(const int layer, const int locId){
 
 }
 
-std::string Chunk::makeChunkIdStr(const int idl, const int idr, const bool layer){
+std::string ChunkData::makeChunkIdStr(const int idl, const int idr, const bool layer){
 
     return std::format("{}{:X}_{:X}", layer ? "l":"", idl, idr);
 
 }
 
-const std::tuple<int,int> Chunk::parseChunkIdStr(const std::string& id){
+const std::tuple<int,int> ChunkData::parseChunkIdStr(const std::string& id){
 
     std::istringstream ss(id);
     std::string idlHex, idrHex;
@@ -155,15 +134,11 @@ const std::tuple<int,int> Chunk::parseChunkIdStr(const std::string& id){
 
 }
 
-Chunk::Chunk(const std::string& chunkId): chunkId(chunkId) {
-    load();
-}
-
-void Chunk::downloadParts() {
+void ChunkData::loadParts() {
 
     // get chunk from cf
     Aws::S3::Model::GetObjectRequest req;
-    req.SetBucket(VARS::CF_CHUNKS_BUCKET);
+    req.SetBucket(CF_CHUNKS_BUCKET);
     req.SetKey(chunkId);
 
     auto res = r2Cli->GetObject(req);
@@ -207,8 +182,7 @@ void Chunk::downloadParts() {
 
 }
 
-
-void Chunk::uploadParts(){
+void ChunkData::uploadParts(){
 
     // encode parts
     size_t dataSize = 0;
@@ -245,7 +219,7 @@ void Chunk::uploadParts(){
     stream->write(reinterpret_cast<const char*>(data.data()), data.size());
 
     Aws::S3::Model::PutObjectRequest req;
-    req.SetBucket(VARS::CF_CHUNKS_BUCKET);
+    req.SetBucket(CF_CHUNKS_BUCKET);
     req.SetKey(chunkId);
     req.SetBody(stream);
     req.SetContentLength(data.size());
@@ -254,78 +228,5 @@ void Chunk::uploadParts(){
     auto res = r2Cli->PutObject(req);
     if (!res.IsSuccess())
         throw std::runtime_error("R2 PutObject failed: " + res.GetError().GetMessage());
-
-}
-
-
-void Chunk::load(){
-
-    // get child ids of vector
-    auto& idParts = parseChunkIdStr(chunkId);
-    auto layer = std::get<0>(idParts);
-    auto locId = std::get<1>(idParts);
-    const std::vector<int>& childLocIds = getMappedFwd(layer, locId);
-
-    // load point clouds for each child from fs
-    for(int chli: childLocIds){
-        const std::string fname = "/point_clouds/" + chunkId + ".bin";
-        std::ifstream file(fname, std::ios::binary);
-        if (!file.is_open()) //files may not exist
-            continue;
-
-        int rows;
-        file.read(reinterpret_cast<char*>(&rows), sizeof(int));
-
-        cv::Mat pointCloud(rows, 6, CV_32FC1);
-        size_t size = pointCloud.total() * pointCloud.elemSize();
-        file.read(reinterpret_cast<char*>(pointCloud.data), size);
-        file.close();
-
-        pointClouds[chli] = std::move(pointCloud);
-    }
-
-    // load existing chunk data
-    downloadParts();
-
-}
-
-void Chunk::save(){
-
-    std::vector<cv::Mat> samples;
-    cv::RNG rng;
-
-    // sample points from children
-    for(const auto& [_, mat] : pointClouds){
-        int n = mat.rows;
-        int nf = (float)(mat.rows);
-
-        int sampleCount = std::max(1, (int)(n * PC_SAMPLE_PERC));
-
-        std::vector<int> idxs(n);
-        for (int i = 0; i < n; ++i)
-            idxs[i] = i;
-
-        std::shuffle(idxs.begin(), idxs.end(), rng);
-
-        for (int i = 0; i < sampleCount; ++i)
-            samples.push_back(mat.row(idxs[i]));
-    }
-
-    cv::Mat pointCloud;
-    cv::vconcat(samples, pointCloud);
- 
-    // write to file
-    const std::string fname = "/point_clouds/" + chunkId + ".dat";
-    std::ofstream file(fname, std::ios::binary);  
-    if (!file.is_open()) {
-        std::cerr << "Error opening file for writing: " << fname << std::endl;
-        return;
-    }
-
-    int rows = pointCloud.rows;
-    file.write(reinterpret_cast<const char*>(&rows), sizeof(int));
-
-    size_t dataSize = pointCloud.total() * pointCloud.elemSize();
-    file.write(reinterpret_cast<const char*>(pointCloud.data), dataSize);
 
 }
