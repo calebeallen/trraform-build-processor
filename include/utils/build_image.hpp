@@ -15,6 +15,8 @@ namespace BuildImage {
     inline constexpr float NEAR = 1;
     inline constexpr float FAR = 100;
 
+    inline constexpr float LIGHT_INTENSITY = 1.8f;
+
     std::vector<uint8_t> make(const std::span<uint16_t>&);  
 
 }

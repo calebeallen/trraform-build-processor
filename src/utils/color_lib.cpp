@@ -1,5 +1,6 @@
 #include <cstdint>
 #include <vector>
+#include <optional>
 
 #include <opencv2/core.hpp>
 
@@ -14,7 +15,7 @@ static cv::Vec3f lerp(const cv::Vec3f& a, const cv::Vec3f& b, const float alpha)
 
 }   
 
-const cv::Mat ColorLib::getColor(const size_t idx) {
+std::optional<cv::Mat> ColorLib::getColor(const size_t idx) {
 
     constexpr int OFFSET = VARS::PLOT_COUNT + 1;
 
@@ -67,18 +68,18 @@ const cv::Mat ColorLib::getColor(const size_t idx) {
     }();
 
     if(idx < OFFSET)
-        return cv::Mat();
+        return std::nullopt;
 
     return palette.row(idx - OFFSET);
 
 }
 
-const cv::Vec3f ColorLib::getColorAsVec(const size_t idx) {
+std::optional<cv::Vec3f> ColorLib::getColorAsVec(const size_t idx) {
 
     const auto& m = getColor(idx);
-    if (m.empty())
-        return cv::Vec3f{0.0f, 0.0f, 0.0f};
+    if (!m)
+        return std::nullopt;
 
-    return m.at<cv::Vec3f>(0, 0);
+    return m->at<cv::Vec3f>(0, 0);
 
 }

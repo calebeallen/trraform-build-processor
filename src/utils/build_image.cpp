@@ -2,11 +2,13 @@
 #include <span>
 #include <cstdint>
 #include <limits>
+#include <optional>
 
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 
 #include "build_image.hpp"
+#include "constants.hpp"
 #include "color_lib.hpp"
 #include "utils.hpp"
 
@@ -21,22 +23,25 @@ static const cv::Vec3f FACE_NORMALS[6]{
     { 0.0f,  0.0f, -1.0f}
 };
 
-static const cv::Vec4f FACE_VERTS[6][4]{
-    { {0.0f,1.0f,0.0f,1.0f}, {1.0f,1.0f,0.0f,1.0f}, {1.0f,1.0f,1.0f,1.0f}, {0.0f,1.0f,1.0f,1.0f} },
-    { {0.0f,0.0f,0.0f,1.0f}, {0.0f,0.0f,1.0f,1.0f}, {1.0f,0.0f,1.0f,1.0f}, {1.0f,0.0f,0.0f,1.0f} },
-    { {0.0f,0.0f,0.0f,1.0f}, {0.0f,1.0f,0.0f,1.0f}, {0.0f,1.0f,1.0f,1.0f}, {0.0f,0.0f,1.0f,1.0f} },
-    { {1.0f,0.0f,0.0f,1.0f}, {1.0f,0.0f,1.0f,1.0f}, {1.0f,1.0f,1.0f,1.0f}, {1.0f,1.0f,0.0f,1.0f} },
-    { {0.0f,0.0f,1.0f,1.0f}, {0.0f,1.0f,1.0f,1.0f}, {1.0f,1.0f,1.0f,1.0f}, {1.0f,0.0f,1.0f,1.0f} },
-    { {0.0f,0.0f,0.0f,1.0f}, {1.0f,0.0f,0.0f,1.0f}, {1.0f,1.0f,0.0f,1.0f}, {0.0f,1.0f,0.0f,1.0f} }
+static const size_t FACE_IDX[6][4] = {
+    {3, 2, 6, 7},
+    {0, 4, 5, 1},
+    {0, 3, 7, 4},
+    {1, 5, 6, 2},
+    {4, 7, 6, 5},
+    {0, 1, 2, 3}
 };
 
-static cv::Vec3f ndcToScreen(const cv::Vec4f& v) {
-    return cv::Vec3f{
-        (v[0] * 0.5f + 0.5f) * BuildImage::IMG_WIDTH,
-        (1.0f - (v[1] * 0.5f + 0.5f)) * BuildImage::IMG_HEIGHT,
-        v[2]
-    };
-}
+static const cv::Vec4f VERT_OFFSET[8] = {
+    {0.0f, 0.0f, 0.0f, 1.0f},
+    {1.0f, 0.0f, 0.0f, 1.0f},
+    {1.0f, 1.0f, 0.0f, 1.0f},
+    {0.0f, 1.0f, 0.0f, 1.0f},
+    {0.0f, 0.0f, 1.0f, 1.0f},
+    {1.0f, 0.0f, 1.0f, 1.0f},
+    {1.0f, 1.0f, 1.0f, 1.0f},
+    {0.0f, 1.0f, 1.0f, 1.0f}
+};
 
 static void rasterize(
     cv::Mat& rgb, 
@@ -74,7 +79,7 @@ static void rasterize(
             float z = w0 * a[2] + w1 * b[2] + w2 * c[2];
             int idx = y * BuildImage::IMG_WIDTH + x;
 
-            if (z < zbuf[idx]) {
+            if (z >= 0 && z < zbuf[idx]) {
                 zbuf[idx] = z;
                 auto& px = rgb.at<cv::Vec3b>(y, x);
                 px = color; // white in BGR
@@ -94,31 +99,33 @@ std::vector<uint8_t> BuildImage::make(const std::span<uint16_t>& buildData) {
 
     // get points & bounds
     cv::Vec4f min{fmax,fmax,fmax,1.0f}, max{fmin,fmin,fmin,1.0f};
-    cv::Vec3f col;
     std::vector<cv::Vec4f> points;
     std::vector<cv::Vec3f> colors;
+
+    std::optional<cv::Vec3f> col;
     const size_t bdLen = buildData.size();
     int idx = 0;
     for (size_t i = 2; i < bdLen; ++i) {
-        if (buildData[i] & 1) {   
+        if (buildData[i] & 1) {
             col = ColorLib::getColorAsVec(buildData[i] >> 1);
-
-            cv::Vec4f u(Utils::idxToVec4(idx, bs));
-            min = cv::min(min, u);
-            max = cv::max(max, u);
-
-            points.push_back(u);
-            colors.push_back(col);
+            if (col) {
+                cv::Vec4f u(Utils::idxToVec4(idx, bs));
+                min = cv::min(min, u);
+                max = cv::max(max, u);
+                points.push_back(u);
+                colors.push_back(*col);
+            }
             ++idx;
         } else {
             int repeat = buildData[i] >> 1;
-            for(int j = 0; j < repeat; ++j){
-                cv::Vec4f u(Utils::idxToVec4(idx + j, bs));
-                min = cv::min(min, u);
-                max = cv::max(max, u);
-
-                points.push_back(u); 
-                colors.push_back(col);
+            if (col) {
+                for(int j = 0; j < repeat; ++j){
+                    cv::Vec4f u(Utils::idxToVec4(idx + j, bs));
+                    min = cv::min(min, u);
+                    max = cv::max(max, u);
+                    points.push_back(u); 
+                    colors.push_back(*col);
+                }
             }
             idx += repeat;
         }
@@ -154,39 +161,60 @@ std::vector<uint8_t> BuildImage::make(const std::span<uint16_t>& buildData) {
     proj = proj * view;
     
     // buffers
-    std::vector<float> zbuf(IMG_WIDTH * IMG_HEIGHT, fmax);
+    std::vector<float> zbuf(IMG_WIDTH * IMG_HEIGHT, 1.0f);
     cv::Mat rgb(IMG_HEIGHT, IMG_WIDTH, CV_8UC3);
 
+    cv::Vec3f light(cv::normalize(cv::Vec3f{
+        std::cosf(43.0f * CV_PI / 180.0f),
+        std::cosf(45.0f * CV_PI / 180.0f),
+        std::cosf(47.0f * CV_PI / 180.0f)
+    }));
+    light *= LIGHT_INTENSITY * 0xFF;
+
+    // precompute back face culling
+    bool cullFace[6];
+    for (int j = 0; j < 6; ++j)
+        cullFace[j] = (f.dot(FACE_NORMALS[j]) >= 0.0f);
+
     // draw faces for each voxel
-    for(const auto& u : points){
-        for(size_t i = 0; i < 6; ++i){
-            // back face culling
-            if(f.dot(FACE_NORMALS[i]) >= 0.0f)
+    const size_t pLen = points.size();
+    for(size_t i = 0; i < pLen; ++i){
+
+        const auto& p = points[i];
+
+        // project vertices to screen space
+        cv::Vec3f v[8];
+        for(size_t j = 0; j < 8; ++j){
+            cv::Vec4f u = p + VERT_OFFSET[j];
+            u = proj * u;
+            v[j] = cv::Vec3f{
+                (u[0] / u[3] * 0.5f + 0.5f) * BuildImage::IMG_WIDTH,
+                (1.0f - (u[1] / u[3] * 0.5f + 0.5f)) * BuildImage::IMG_HEIGHT,
+                0.5f * u[2] / u[3]+ 0.5f
+            };
+        }
+
+        // rasterize
+        for(size_t j = 0; j < 6; ++j){
+            if(cullFace[j])
                 continue;
 
-            const auto& v = FACE_VERTS[i];
+            // apply lighting
+            const auto& cf = colors[i];
+            float l = light[j/2];
+            cv::Vec3b c{
+                cv::saturate_cast<uchar>(std::abs(cf[2] * l)),
+                cv::saturate_cast<uchar>(std::abs(cf[1] * l)),
+                cv::saturate_cast<uchar>(std::abs(cf[0] * l))
+            };
 
-            cv::Vec4f v0(u + v[0]);
-            cv::Vec4f v1(u + v[1]);
-            cv::Vec4f v2(u + v[2]);
-            cv::Vec4f v3(u + v[3]);
-
-            v0 = proj * v0;
-            v1 = proj * v1;
-            v2 = proj * v2;
-            v3 = proj * v3;
-
-            // convert to screen space
-            auto vs0 = ndcToScreen(v0 / v0[3]);
-            auto vs1 = ndcToScreen(v1 / v1[3]);
-            auto vs2 = ndcToScreen(v2 / v2[3]);
-            auto vs3 = ndcToScreen(v3 / v3[3]);
-
-            // compute lighting
-
-
-            rasterize(rgb, zbuf, vs0, vs1, vs2);
-            rasterize(rgb, zbuf, vs0, vs2, vs3);
+            size_t i0 = FACE_IDX[j][0];
+            size_t i1 = FACE_IDX[j][1];
+            size_t i2 = FACE_IDX[j][2];
+            size_t i3 = FACE_IDX[j][3];
+            
+            rasterize(rgb, zbuf, v[i0], v[i1], v[i2], c);
+            rasterize(rgb, zbuf, v[i0], v[i2], v[i3], c);
         }
     }
 
