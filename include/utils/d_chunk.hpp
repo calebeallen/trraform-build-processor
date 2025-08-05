@@ -8,14 +8,20 @@
 
 #include "chunk_data.hpp"
 
-class DChunk : virtual ChunkData {
+class DChunk : public ChunkData {
 
 public:
-    std::unordered_map<int,std::vector<uchar>> updatedImages;
+    std::unordered_map<std::string,std::vector<uchar>> _updatedJpegs;
 
-    static const std::span<uint8_t> getBuildData(std::vector<uint8_t>&);
+    // plot helpers (maybe move to sep namespace?)
+    static const std::span<uint16_t> getBuildData(std::vector<uint8_t>&);
+    static cv::Mat idxToPos(const int, const int);
+    static int getLocPlotId(const int);
+    static int getLocPlotId(const std::string&);
 
     void pullPlotUpdates();
-    std::vector<uchar> makeBuildImage();
+    std::vector<uint8_t> makeBuildImage();
+
+    virtual void process() override;
     
 };

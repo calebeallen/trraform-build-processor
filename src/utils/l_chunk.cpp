@@ -1,21 +1,23 @@
 #include <fstream>
 #include <algorithm>
+#include <format>
+#include <string>
 
 #include "constants.hpp"
 #include "l_chunk.hpp"
 
-
 void LChunk::loadPointClouds(){
 
     // get child ids of vector
-    auto& idParts = parseChunkIdStr(chunkId);
+    auto idParts = parseChunkIdStr(_chunkId);
     auto layer = std::get<0>(idParts);
     auto locId = std::get<1>(idParts);
     const std::vector<int>& childLocIds = getMappedFwd(layer, locId);
 
     // load point clouds for each child from fs
     for(int chli: childLocIds){
-        const std::string fname = "/point_clouds/" + chunkId + ".bin";
+        const std::string childId(makeChunkIdStr(layer, chli, true));
+        const std::string fname = "/point_clouds/" + childId + ".dat";
         std::ifstream file(fname, std::ios::binary);
         if (!file.is_open()) //files may not exist
             continue;
@@ -28,7 +30,7 @@ void LChunk::loadPointClouds(){
         file.read(reinterpret_cast<char*>(pointCloud.data), size);
         file.close();
 
-        pointClouds[chli] = std::move(pointCloud);
+        _pointClouds[chli] = std::move(pointCloud);
     }
 
 }
@@ -39,11 +41,11 @@ void LChunk::savePointCloud(){
     cv::RNG rng;
 
     // sample points from children
-    for(const auto& [_, mat] : pointClouds){
+    for(const auto& [_, mat] : _pointClouds){
         int n = mat.rows;
         int nf = (float)(mat.rows);
 
-        int sampleCount = std::max(1, (int)(n * PC_SAMPLE_PERC));
+        int sampleCount = std::max(1, (int)(n * VARS::PC_SAMPLE_PERC));
 
         std::vector<int> idxs(n);
         for (int i = 0; i < n; ++i)
@@ -59,7 +61,7 @@ void LChunk::savePointCloud(){
     cv::vconcat(samples, pointCloud);
  
     // write to file
-    const std::string fname = "/point_clouds/" + chunkId + ".dat";
+    const std::string fname = "/point_clouds/" + _chunkId + ".dat";
     std::ofstream file(fname, std::ios::binary);  
     if (!file.is_open()) {
         
@@ -71,5 +73,91 @@ void LChunk::savePointCloud(){
 
     size_t dataSize = pointCloud.total() * pointCloud.elemSize();
     file.write(reinterpret_cast<const char*>(pointCloud.data), dataSize);
+
+}
+
+void LChunk::process(){
+
+    for (const auto& idStr : _needsUpdate) {
+        auto locId = std::stoi(idStr, nullptr, 16);
+        cv::Mat& points = _pointClouds[locId];
+        const int n = points.rows;
+
+        if(n < 2)
+            continue;
+
+        // compute bounds of point cloud
+        cv::Mat xyz = points.colRange(0,3).clone();
+        cv::Mat min, max;
+        cv::reduce(xyz, min, 0, cv::REDUCE_MIN);
+        cv::reduce(xyz, max, 0, cv::REDUCE_MAX);
+
+        // normalize points
+        for (int c = 0; c < 3; ++c) {
+            float m = min.at<float>(0,c);
+            float r = max.at<float>(0,c) - m;
+            if (r > 1e-6f) {
+                xyz.col(c) -= m;
+                xyz.col(c) /= r;
+            }
+        }
+
+        // compute number of boxes
+        double kLin = std::min(n / std::pow(VARS::BUILD_SIZE_STD, 3), 1.0);
+        int k = int((1 - std::pow(kLin - 1, 6)) * VARS::KMEANS_MAX_CLUSTERS);
+        k = std::clamp(k, 1, n);
+
+        cv::Mat labels, centers;
+        cv::kmeans(
+            xyz, k, labels,
+            cv::TermCriteria(
+                cv::TermCriteria::EPS+cv::TermCriteria::MAX_ITER, 
+                VARS::KMEANS_MAX_ITERS, 
+                1e-4
+            ), 1, cv::KMEANS_PP_CENTERS, centers
+        );
+
+        // compute bounding boxes, encode into uint8 buffer
+        std::vector<cv::Vec3f> mean(k, {0,0,0}), m2(k, {0,0,0}), color(k, {0,0,0});
+        std::vector<int> count(k, 0);
+        for (int i = 0; i < n; ++i) {
+            size_t cl = labels.at<int>(i);
+            const float* p = points.ptr<float>(i);
+            ++count[cl];
+
+            for (size_t c = 0; c < 3; ++c) {
+                float x = p[c];
+                float delta = x - mean[cl][c];
+                mean[cl][c] += delta / count[cl];
+                float delta2 = x - mean[cl][c];
+                m2[cl][c] += delta * delta2;
+                color[cl][c] += p[c + 3];
+            }   
+        }
+
+        // encode boxes into buffer
+        std::vector<uint8_t> buf;
+        buf.reserve(sizeof(float) * k * 9);
+        for (size_t i = 0; i < k; ++i) {
+            const int clusterSize = count[i];
+            if (clusterSize == 0)
+                continue;
+
+            cv::Vec3f stddev;
+            for (int c = 0; c < 3; ++c)
+                stddev[c] = clusterSize > 1 ? std::sqrt(m2[i][c] / (clusterSize - 1)) : 0.0f;
+
+            float arr[9]{
+                mean[i][0] - stddev[0], mean[i][1] - stddev[1], mean[i][2] - stddev[2],
+                mean[i][0] + stddev[0], mean[i][1] + stddev[1], mean[i][2] + stddev[2],
+                color[i][0] / clusterSize, color[i][1] / clusterSize, color[i][2] / clusterSize,
+            };
+
+            const uint8_t* bytes = reinterpret_cast<const uint8_t*>(arr);
+            buf.insert(buf.end(), bytes, bytes + sizeof(arr));
+        }
+
+        _parts[locId] = std::move(buf);
+    }
 
 }

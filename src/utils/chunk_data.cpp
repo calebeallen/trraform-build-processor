@@ -21,8 +21,8 @@ const int ChunkData::getMappedBwd(const int layer, const int locId){
         return 0;
     
     if(layer == 1){
-        static const std::array<int, L1_SIZE> map = []() {
-            std::array<int, L1_SIZE> map;
+        static const std::array<int, VARS::L1_SIZE> map = []() {
+            std::array<int, VARS::L1_SIZE> map;
             std::ifstream file("chunk_maps/l1.bin", std::ios::binary);
             if (!file) 
                 throw std::runtime_error("Failed to open l1.bin");
@@ -38,8 +38,8 @@ const int ChunkData::getMappedBwd(const int layer, const int locId){
     }
 
     if(layer == 2){
-        static const std::array<int, L2_SIZE> map = []() {
-            std::array<int, L2_SIZE> map;
+        static const std::array<int, VARS::L2_SIZE> map = []() {
+            std::array<int, VARS::L2_SIZE> map;
             std::ifstream file("chunk_maps/l2.bin", std::ios::binary);
             if (!file) 
                 throw std::runtime_error("Failed to open l1.bin");
@@ -64,7 +64,7 @@ const std::vector<int>& ChunkData::getMappedFwd(const int layer, const int locId
     if(layer == 0){
         static const std::vector<int> entry = []() {
             std::vector<int> map;
-            for(int i = 0; i < L0_SIZE; ++i)
+            for(int i = 0; i < VARS::L0_SIZE; ++i)
                 map.push_back(i);
             return map;
         }();
@@ -72,8 +72,8 @@ const std::vector<int>& ChunkData::getMappedFwd(const int layer, const int locId
     }
 
     if(layer == 1){
-        static const std::array<std::vector<int>, L0_SIZE> map = []() {
-            std::array<std::vector<int>, L0_SIZE> map;
+        static const std::array<std::vector<int>, VARS::L0_SIZE> map = []() {
+            std::array<std::vector<int>, VARS::L0_SIZE> map;
 
             std::ifstream file("chunk_maps/l1.bin", std::ios::binary);
             if (!file) 
@@ -90,8 +90,8 @@ const std::vector<int>& ChunkData::getMappedFwd(const int layer, const int locId
     }
     
     if(layer == 2){
-        static const std::array<std::vector<int>, L1_SIZE> map = []() {
-            std::array<std::vector<int>, L1_SIZE> map;
+        static const std::array<std::vector<int>, VARS::L1_SIZE> map = []() {
+            std::array<std::vector<int>, VARS::L1_SIZE> map;
 
             std::ifstream file("chunk_maps/l2.bin", std::ios::binary);
             if (!file) 
@@ -130,16 +130,16 @@ const std::tuple<int,int> ChunkData::parseChunkIdStr(const std::string& id){
     if(idlHex[0] == 'l')
         idlHex.erase(0,1);
        
-    return std::tuple<int,int>(stoi(idlHex), stoi(idrHex));
+    return std::tuple<int,int>(stoi(idlHex, nullptr, 16), stoi(idrHex, nullptr, 16));
 
 }
 
-void ChunkData::loadParts() {
+void ChunkData::downloadParts() {
 
     // get chunk from cf
     Aws::S3::Model::GetObjectRequest req;
-    req.SetBucket(CF_CHUNKS_BUCKET);
-    req.SetKey(chunkId);
+    req.SetBucket(VARS::CF_CHUNKS_BUCKET);
+    req.SetKey(_chunkId);
 
     auto res = r2Cli->GetObject(req);
     if (!res.IsSuccess()) 
@@ -177,7 +177,7 @@ void ChunkData::loadParts() {
         std::vector<uint8_t> part(data.begin() + i, data.begin() + i + partLen);
         i += partLen;
 
-        parts[key] = std::move(part);
+        _parts[key] = std::move(part);
     }
 
 }
@@ -186,12 +186,12 @@ void ChunkData::uploadParts(){
 
     // encode parts
     size_t dataSize = 0;
-    for(auto& [key, part] : parts)
+    for(auto& [key, part] : _parts)
         dataSize += 8 + part.size();
 
     std::vector<uint8_t> data(dataSize);
     size_t i = 0;
-    for(auto& [key, part] : parts){
+    for(auto& [key, part] : _parts){
 
         // set key
         data[i] = static_cast<uint8_t>(key & 0xFF);
@@ -219,8 +219,8 @@ void ChunkData::uploadParts(){
     stream->write(reinterpret_cast<const char*>(data.data()), data.size());
 
     Aws::S3::Model::PutObjectRequest req;
-    req.SetBucket(CF_CHUNKS_BUCKET);
-    req.SetKey(chunkId);
+    req.SetBucket(VARS::CF_CHUNKS_BUCKET);
+    req.SetKey(_chunkId);
     req.SetBody(stream);
     req.SetContentLength(data.size());
     req.SetContentType("application/octet-stream"); 
