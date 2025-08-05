@@ -14,7 +14,7 @@
 
 const std::span<uint16_t> DChunk::getBuildData(std::vector<uint8_t>& plotData){
 
-    // read json len metadata, skip it
+    // skip json part
     size_t i = static_cast<size_t>(plotData[0]) |
         (static_cast<size_t>(plotData[1]) << 8) |
         (static_cast<size_t>(plotData[2]) << 16) |
@@ -34,17 +34,6 @@ const std::span<uint16_t> DChunk::getBuildData(std::vector<uint8_t>& plotData){
  
 }
 
-cv::Mat DChunk::idxToPos(const int idx, const int s) {
-
-    const int s2 = s * s;
-    cv::Mat pos(1, 3, CV_32F);
-    pos.at<float>(0,0) = idx % s;
-    pos.at<float>(0,1) = idx / s2;
-    pos.at<float>(0,2) = (idx % s2) / s;
-    return pos;
-
-}
-
 int DChunk::getLocPlotId(const int plotId) {
     return plotId <= VARS::PLOT_COUNT ? 0 : plotId & 0xFFF;
 }
@@ -53,7 +42,7 @@ int DChunk::getLocPlotId(const std::string& plotIdStr) {
     return getLocPlotId(stoi(plotIdStr, nullptr, 16));
 }
 
-void DChunk::pullPlotUpdates(){
+void DChunk::downloadPlotUpdates(){
 
     // request all updated plots
     const size_t n = _needsUpdate.size();
@@ -66,9 +55,9 @@ void DChunk::pullPlotUpdates(){
         futures[i] = r2Cli->GetObjectCallable(request);
     }
 
-    // set new plot data, use plot's local id for chunk part key.
+    // set new plot data, use plot's id.
     for (size_t i = 0; i < n; ++i) {
-        std::string& plotId = _needsUpdate[i];
+        auto plotId = stoll(_needsUpdate[i], nullptr, 16);
         auto res = futures[i].get();
         if (!res.IsSuccess()) 
             continue;
@@ -79,18 +68,16 @@ void DChunk::pullPlotUpdates(){
             std::istreambuf_iterator<char>()
         };
     
-        int locId = getLocPlotId(plotId);
-        _parts[locId] = std::move(data);
+        _parts[plotId] = std::move(data);
     }
 
 }
 
 void DChunk::process() {
 
-    // assuming by this point parts contains updated info
     // create new images for plots that need update
     for(const auto& plotId : _needsUpdate){
-        const auto& buildData = getBuildData(_parts[getLocPlotId(plotId)]);
+        const auto buildData = getBuildData(_parts[getLocPlotId(plotId)]);
         _updatedJpegs[plotId] = BuildImage::make(buildData);
     }
 

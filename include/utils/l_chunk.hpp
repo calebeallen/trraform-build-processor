@@ -11,9 +11,11 @@ class LChunk : public ChunkData {
 protected:
     std::unordered_map<int,cv::Mat> _pointClouds;
 
-public:
     void loadPointClouds();
     void savePointCloud();
+
+public:
     void process() override;
+    void update() override;
 
 };

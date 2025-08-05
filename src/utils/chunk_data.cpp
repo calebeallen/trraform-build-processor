@@ -5,6 +5,8 @@
 #include <array>
 #include <stdexcept>
 #include <cstdint>
+#include <bit>
+#include <cstring>
 
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -134,6 +136,20 @@ const std::tuple<int,int> ChunkData::parseChunkIdStr(const std::string& id){
 
 }
 
+static inline std::uint64_t load_le_u64(const std::uint8_t* p) noexcept {
+    std::uint64_t v;
+    std::memcpy(&v, p, sizeof(v));
+    if constexpr (std::endian::native == std::endian::big)
+        v = std::byteswap(v);
+    return v;
+}
+
+static inline void store_le_u64(std::uint8_t* p, std::uint64_t v) noexcept {
+    if constexpr (std::endian::native == std::endian::big)
+        v = std::byteswap(v);
+    std::memcpy(p, &v, sizeof(v));
+}
+
 void ChunkData::downloadParts() {
 
     // get chunk from cf
@@ -154,21 +170,21 @@ void ChunkData::downloadParts() {
     // decode into parts
     size_t i = 0, n = data.size();
     while (i < n) {
-        if (i + 4 > n)
-            throw std::runtime_error("Not enough bytes to read key");
+        if (i + 12 > n)
+            throw std::runtime_error("Not enough bytes to read metadata");
 
-        // read key (32 bit int little endian)
-        int key = static_cast<int>(data[i]) |
-            (static_cast<int>(data[i + 1]) << 8) |
-            (static_cast<int>(data[i + 2]) << 16) |
-            (static_cast<int>(data[i + 3]) << 24);
-        i += 4;
+        // read key (64 bit int little endian)
+        std::uint64_t key;
+        std::memcpy(&key, &data[i], sizeof(std::uint64_t));
+        if constexpr (std::endian::native == std::endian::big)
+            key = std::byteswap(key);
+        i += 8;
 
         // read part len metadata (32 bit int little endian)
-        size_t partLen = static_cast<size_t>(data[i]) |
-            (static_cast<size_t>(data[i + 1]) << 8) |
-            (static_cast<size_t>(data[i + 2]) << 16) |
-            (static_cast<size_t>(data[i + 3]) << 24);
+        std::uint32_t partLen;
+        std::memcpy(&partLen, &data[i], sizeof(std::uint32_t));
+        if constexpr (std::endian::native == std::endian::big)
+            partLen = std::byteswap(partLen);
         i += 4;
 
         if (i + partLen > n)
@@ -187,25 +203,24 @@ void ChunkData::uploadParts(){
     // encode parts
     size_t dataSize = 0;
     for(auto& [key, part] : _parts)
-        dataSize += 8 + part.size();
+        dataSize += 12 + part.size();
 
     std::vector<uint8_t> data(dataSize);
     size_t i = 0;
     for(auto& [key, part] : _parts){
 
         // set key
-        data[i] = static_cast<uint8_t>(key & 0xFF);
-        data[i+1] = static_cast<uint8_t>((key >> 8) & 0xFF);
-        data[i+2] = static_cast<uint8_t>((key >> 16) & 0xFF);
-        data[i+3] = static_cast<uint8_t>((key >> 24) & 0xFF);
-        i += 4;
+        uint64_t k = key;
+        if constexpr (std::endian::native == std::endian::big)
+            k = std::byteswap(k);
+        std::memcpy(&data[i], &k, sizeof(uint64_t));
+        i += 8;
 
         // set part len metadata
-        size_t partLen = part.size();
-        data[i] = static_cast<uint8_t>(partLen & 0xFF);
-        data[i+1] = static_cast<uint8_t>((partLen >> 8) & 0xFF);
-        data[i+2] = static_cast<uint8_t>((partLen >> 16) & 0xFF);
-        data[i+3] = static_cast<uint8_t>((partLen >> 24) & 0xFF);
+        uint32_t partLen = part.size();
+        if constexpr (std::endian::native == std::endian::big)
+            partLen = std::byteswap(partLen);
+        std::memcpy(&data[i], &partLen, sizeof(uint32_t));
         i += 4;
 
         // set part
@@ -222,7 +237,7 @@ void ChunkData::uploadParts(){
     req.SetBucket(VARS::CF_CHUNKS_BUCKET);
     req.SetKey(_chunkId);
     req.SetBody(stream);
-    req.SetContentLength(data.size());
+    req.SetContentLength(static_cast<long long>(data.size()));
     req.SetContentType("application/octet-stream"); 
 
     auto res = r2Cli->PutObject(req);

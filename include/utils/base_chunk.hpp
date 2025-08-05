@@ -4,9 +4,10 @@
 
 class BaseChunk : public DChunk {
 
-public:
+protected:
     void savePointCloud();
-    void process() override;
+
+public:
     void update() override;
 
 };

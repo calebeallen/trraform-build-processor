@@ -10,18 +10,18 @@
 
 class DChunk : public ChunkData {
 
-public:
+protected:
     std::unordered_map<std::string,std::vector<uchar>> _updatedJpegs;
 
     // plot helpers (maybe move to sep namespace?)
-    static const std::span<uint16_t> getBuildData(std::vector<uint8_t>&);
-    static cv::Mat idxToPos(const int, const int);
+    static const std::span<uint16_t> getBuildData(std::vector<uchar>&);
     static int getLocPlotId(const int);
     static int getLocPlotId(const std::string&);
 
-    void pullPlotUpdates();
-    std::vector<uint8_t> makeBuildImage();
+    void downloadPlotUpdates();
 
-    virtual void process() override;
+public:
+    void process() override;
+    void update() override;
     
 };
