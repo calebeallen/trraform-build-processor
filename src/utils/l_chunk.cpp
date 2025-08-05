@@ -78,6 +78,7 @@ void LChunk::savePointCloud(){
 
 void LChunk::process(){
 
+    // compute low-resolution representations of the chunk
     for (const auto& idStr : _needsUpdate) {
         auto locId = std::stoi(idStr, nullptr, 16);
         cv::Mat& points = _pointClouds[locId];
@@ -137,7 +138,6 @@ void LChunk::process(){
 
         // encode boxes into buffer
         std::vector<uint8_t> buf;
-        buf.reserve(sizeof(float) * k * 9);
         for (size_t i = 0; i < k; ++i) {
             const int clusterSize = count[i];
             if (clusterSize == 0)

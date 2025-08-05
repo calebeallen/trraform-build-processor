@@ -10,7 +10,7 @@
 #include "d_chunk.hpp"
 #include "constants.hpp"
 #include "cf_util.hpp"
-#include "make_build_image.hpp"
+#include "build_image.hpp"
 
 const std::span<uint16_t> DChunk::getBuildData(std::vector<uint8_t>& plotData){
 

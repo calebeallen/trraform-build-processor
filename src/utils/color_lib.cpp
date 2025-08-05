@@ -14,7 +14,7 @@ static cv::Vec3f lerp(const cv::Vec3f& a, const cv::Vec3f& b, const float alpha)
 
 }   
 
-const cv::Mat& ColorLib::getColor(const size_t idx){
+const cv::Mat ColorLib::getColor(const size_t idx) {
 
     constexpr int OFFSET = VARS::PLOT_COUNT + 1;
 
@@ -61,12 +61,24 @@ const cv::Mat& ColorLib::getColor(const size_t idx){
 
         }
 
-        return cv::Mat(palette.size(), 3, CV_32F, palette.data());
+        cv::Mat m(static_cast<int>(palette.size()), 3, CV_32F);        // rows×3, own storage
+        std::memcpy(m.data, palette.data(), palette.size() * sizeof(cv::Vec3f));
+        return m;    
     }();
 
     if(idx < OFFSET)
         return cv::Mat();
 
     return palette.row(idx - OFFSET);
+
+}
+
+const cv::Vec3f ColorLib::getColorAsVec(const size_t idx) {
+
+    const auto& m = getColor(idx);
+    if (m.empty())
+        return cv::Vec3f{0.0f, 0.0f, 0.0f};
+
+    return m.at<cv::Vec3f>(0, 0);
 
 }
