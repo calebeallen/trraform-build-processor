@@ -1,11 +1,9 @@
 #include <hiredis/hiredis.h>
 
-int main(){
-
-
-  
+int main() {
 
     // connect to redis
+    
     
 
     // create theads

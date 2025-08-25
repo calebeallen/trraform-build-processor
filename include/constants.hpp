@@ -16,7 +16,13 @@ namespace VARS {
     inline constexpr int L2_SIZE = D0_PLOT_COUNT;
     inline constexpr float PC_SAMPLE_PERC = 0.1F;
 
-    inline const std::string CF_CHUNKS_BUCKET("chunks");
-    inline const std::string CF_PLOTS_BUCKET("plots");
+    inline const std::string CF_CHUNKS_BUCKET = "chunks";
+    inline const std::string CF_PLOTS_BUCKET = "plots";
+
+    inline const std::string REDIS_UPDATE_QUEUE_PREFIX = "up:q:";
+    inline const std::string REDIS_UPDATE_NEEDS_UPDATE_PREFIX = "up:nu:";
+    inline const std::string REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX = "up:nu:f";
+    inline const std::string REDIS_NO_IMAGE_UPDATE_FLAG = "niu";
+    inline const std::string REDIS_SET_DEFAULT_BUILD_FLAG = "sdb";
 
 }

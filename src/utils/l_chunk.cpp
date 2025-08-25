@@ -79,8 +79,7 @@ void LChunk::savePointCloud(){
 void LChunk::process(){
 
     // compute low-resolution representations of the chunk
-    for (const auto& idStr : _needsUpdate) {
-        auto locId = std::stoi(idStr, nullptr, 16);
+    for (const auto& locId : _needsUpdate) {
         cv::Mat& points = _pointClouds[locId];
         const int n = points.rows;
 

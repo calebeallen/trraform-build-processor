@@ -136,19 +136,9 @@ const std::tuple<int,int> ChunkData::parseChunkIdStr(const std::string& id){
 
 }
 
-static inline std::uint64_t load_le_u64(const std::uint8_t* p) noexcept {
-    std::uint64_t v;
-    std::memcpy(&v, p, sizeof(v));
-    if constexpr (std::endian::native == std::endian::big)
-        v = std::byteswap(v);
-    return v;
-}
-
-static inline void store_le_u64(std::uint8_t* p, std::uint64_t v) noexcept {
-    if constexpr (std::endian::native == std::endian::big)
-        v = std::byteswap(v);
-    std::memcpy(p, &v, sizeof(v));
-}
+ChunkData::ChunkData(const std::string& _chunkId) : _chunkId(_chunkId){
+    downloadParts();
+};
 
 void ChunkData::downloadParts() {
 

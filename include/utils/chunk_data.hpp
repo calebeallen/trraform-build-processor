@@ -9,7 +9,7 @@ class ChunkData {
 
 protected:
     std::unordered_map<uint64_t,std::vector<uint8_t>> _parts; 
-    std::vector<std::string> _needsUpdate;
+    std::vector<std::uint64_t> _needsUpdate;
     std::string _chunkId;
 
     static const std::vector<int>& getMappedFwd(const int, const int);
@@ -21,6 +21,8 @@ protected:
     void uploadParts();
 
 public:
+    ChunkData(const std::string&);
+
     virtual void process();
     virtual void update();
 
