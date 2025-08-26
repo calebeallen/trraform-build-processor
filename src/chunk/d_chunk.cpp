@@ -11,9 +11,9 @@
 #include <sw/redis++/redis++.h>
 #include <nlohmann/json.hpp>
 
-#include "d_chunk.hpp"
-#include "constants.hpp"
-#include "cf_util.hpp"
+#include "chunk/d_chunk.hpp"
+#include "config/config.hpp"
+#include "utils/cf_utils.hpp"
 #include "build_image.hpp"
 
 const std::span<uint16_t> DChunk::getBuildData(std::vector<uint8_t>& plotData){
@@ -194,7 +194,7 @@ void DChunk::downloadPlotUpdates(){
             Aws::S3::Model::GetObjectRequest request;
             request.SetBucket(VARS::CF_PLOTS_BUCKET);
             request.SetKey(plotId + ".dat");
-            futures.emplace_back(r2Cli->GetObjectCallable(request), plotId);
+            futures.emplace_back(CFUtils::r2Cli->GetObjectCallable(request), plotId);
         }
 
     }

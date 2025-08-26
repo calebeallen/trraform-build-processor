@@ -1,6 +1,6 @@
+#pragma once
 
-#include "d_chunk.hpp"
-#include "l_chunk.hpp"
+#include "chunk/d_chunk.hpp"
 
 class BaseChunk : public DChunk {
 

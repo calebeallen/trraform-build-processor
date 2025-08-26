@@ -4,8 +4,8 @@
 
 #include <opencv2/core.hpp>
 
-#include "color_lib.hpp"
-#include "constants.hpp"
+#include "utils/color_lib.hpp"
+#include "config/config.hpp"
 
 static cv::Vec3f lerp(const cv::Vec3f& a, const cv::Vec3f& b, const float alpha) {
 

@@ -14,9 +14,9 @@
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h> 
 #include <opencv2/core.hpp>
 
-#include "constants.hpp"
-#include "chunk_data.hpp"
-#include "cf_util.hpp"
+#include "config/config.hpp"
+#include "chunk/chunk_data.hpp"
+#include "utils/cf_utils.hpp"
 
 const int ChunkData::getMappedBwd(const int layer, const int locId){
 
@@ -148,7 +148,7 @@ void ChunkData::downloadParts() {
     req.SetBucket(VARS::CF_CHUNKS_BUCKET);
     req.SetKey(_chunkId);
 
-    auto res = r2Cli->GetObject(req);
+    auto res = CFUtils::r2Cli->GetObject(req);
     if (!res.IsSuccess()) 
         return;
 
@@ -231,7 +231,7 @@ void ChunkData::uploadParts(){
     req.SetContentLength(static_cast<long long>(data.size()));
     req.SetContentType("application/octet-stream"); 
 
-    auto res = r2Cli->PutObject(req);
+    auto res = CFUtils::r2Cli->PutObject(req);
     if (!res.IsSuccess())
         throw std::runtime_error("R2 PutObject failed: " + res.GetError().GetMessage());
 

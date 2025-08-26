@@ -6,10 +6,10 @@
 
 #include <opencv2/core.hpp>
 
-#include "base_chunk.hpp"
-#include "constants.hpp"
-#include "color_lib.hpp"
-#include "utils.hpp"
+#include "chunk/base_chunk.hpp"
+#include "config/config.hpp"
+#include "utils/color_lib.hpp"
+#include "utils/utils.hpp"
 
 void BaseChunk::savePointCloud(){
 

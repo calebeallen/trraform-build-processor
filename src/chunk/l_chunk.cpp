@@ -3,8 +3,8 @@
 #include <format>
 #include <string>
 
-#include "constants.hpp"
-#include "l_chunk.hpp"
+#include "config/config.hpp"
+#include "chunk/l_chunk.hpp"
 
 void LChunk::loadPointClouds(){
 

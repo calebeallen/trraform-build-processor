@@ -8,13 +8,13 @@
 #include <nlohmann/json.hpp>
 #include <cpr/cpr.h>
 
-#include "cf_util.hpp"
-#include "constants.hpp"
+#include "utils/cf_utils.hpp"
+#include "config/config.hpp"
 
 Aws::SDKOptions awsSdkOpt;
 Aws::S3::S3Client* r2Cli = nullptr;
 
-void initR2Cli(){
+void CFUtils::initR2Cli(){
 
     Aws::InitAPI(awsSdkOpt);
 
@@ -27,7 +27,7 @@ void initR2Cli(){
 
 }
 
-void closeR2Cli(){
+void CFUtils::closeR2Cli(){
 
     delete r2Cli;
     r2Cli = nullptr;
@@ -35,7 +35,7 @@ void closeR2Cli(){
 
 }
 
-void purgeCacheCDN(const std::vector<std::string>& urls) {
+void CFUtils::purgeCacheCDN(const std::vector<std::string>& urls) {
 
     nlohmann::json payload;
     nlohmann::json filesArray = nlohmann::json::array();

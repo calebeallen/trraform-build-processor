@@ -4,7 +4,7 @@
 
 #include <opencv2/core.hpp>
 
-#include "chunk_data.hpp"
+#include "chunk/chunk_data.hpp"
 
 class LChunk : public ChunkData {
 

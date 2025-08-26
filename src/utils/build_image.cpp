@@ -7,10 +7,10 @@
 #include <opencv2/core.hpp>
 #include <opencv2/imgcodecs.hpp>
 
-#include "build_image.hpp"
-#include "constants.hpp"
-#include "color_lib.hpp"
-#include "utils.hpp"
+#include "utils/build_image.hpp"
+#include "config/config.hpp"
+#include "utils/color_lib.hpp"
+#include "utils/utils.hpp"
 
 static const cv::Vec3f UP{0.0f, 1.0f, 0.0f};
 

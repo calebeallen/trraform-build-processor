@@ -8,7 +8,7 @@
 #include <sw/redis++/redis++.h>
 #include <nlohmann/json.hpp>
 
-#include "chunk_data.hpp"
+#include "chunk/chunk_data.hpp"
 
 typedef struct {
     bool setDefaultBuild = false;
@@ -20,7 +20,10 @@ class DChunk : public ChunkData {
 protected:
     std::unordered_map<uint64_t,std::vector<std::uint8_t>> _updatedJpegs;
     std::vector<UpdateFlags> _updateFlags;
+   
+    void downloadPlotUpdates();
 
+public:
     // plot helpers (maybe move to sep namespace?)
     static const std::vector<uint8_t>& getDefaultBuildData();
     static const std::span<uint16_t> getBuildData(std::vector<std::uint8_t>&);
@@ -30,9 +33,6 @@ protected:
     static int getLocPlotId(const int);
     static int getLocPlotId(const std::string&);
 
-    void downloadPlotUpdates();
-
-public:
     DChunk(sw::redis::Redis&,std::string&);
 
     void process() override;
