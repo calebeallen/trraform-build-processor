@@ -12,15 +12,15 @@ protected:
     std::vector<std::uint64_t> _needsUpdate;
     std::string _chunkId;
 
+    void downloadParts();
+    void uploadParts();
+
+public:
     static const std::vector<int>& getMappedFwd(const int, const int);
     static const int getMappedBwd(const int, const int);
     static std::string makeChunkIdStr(const int, const int, const bool);
     static const std::tuple<int,int> parseChunkIdStr(const std::string&);
 
-    void downloadParts();
-    void uploadParts();
-
-public:
     ChunkData(const std::string&);
 
     virtual void process();

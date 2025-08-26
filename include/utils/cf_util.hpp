@@ -8,3 +8,4 @@ extern Aws::S3::S3Client* r2Cli;
 
 void initR2Cli();
 void closeR2Cli();
+void purgeCacheCDN(const std::vector<std::string>&);

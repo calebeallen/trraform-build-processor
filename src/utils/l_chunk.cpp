@@ -160,3 +160,8 @@ void LChunk::process(){
     }
 
 }
+
+void LChunk::update() {
+    uploadParts();
+    savePointCloud();
+}

@@ -12,6 +12,7 @@
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h> 
+#include <opencv2/core.hpp>
 
 #include "constants.hpp"
 #include "chunk_data.hpp"

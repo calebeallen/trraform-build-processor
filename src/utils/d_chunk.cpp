@@ -249,3 +249,7 @@ void DChunk::process() {
     }
 
 }
+
+void DChunk::update() {
+    uploadParts();
+}

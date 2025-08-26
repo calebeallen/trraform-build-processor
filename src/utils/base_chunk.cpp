@@ -2,6 +2,7 @@
 #include <span>
 #include <utility>
 #include <tuple>
+#include <fstream>
 
 #include <opencv2/core.hpp>
 
@@ -15,7 +16,7 @@ void BaseChunk::savePointCloud(){
     cv::RNG rng;
     std::vector<cv::Mat> points;
 
-    for (auto& [key, part] : _parts) {
+    for (auto& [plotId, part] : _parts) {
         const auto buildData = getBuildData(part);
         const int bs = buildData[1];
 
@@ -44,61 +45,38 @@ void BaseChunk::savePointCloud(){
         int sampleCount = std::max(1, (int)(static_cast<float>(vox.size()) * VARS::PC_SAMPLE_PERC));
         std::shuffle(vox.begin(), vox.end(), rng);
 
-        
+        int worldPosIdx = getMappedBwd(2, plotId);
+        cv::Mat worldPos(1, 3, CV_32F, Utils::idxToVec3(worldPosIdx, VARS::MAIN_BUILD_SIZE).val);
 
         for (size_t i = 0; i < sampleCount; ++i) {
-
             cv::Mat pos(1, 3, CV_32F, Utils::idxToVec3(std::get<0>(vox[i]), bs).val);
             cv::Mat col(*ColorLib::getColor(std::get<1>(vox[i])));
+            pos += 0.5f;
             pos /= bs;
-            
-
-
+            pos += worldPos;
+            points.push_back(std::move(pos));
         }
-
     }
+
+    cv::Mat pointCloud;
+    cv::vconcat(points, pointCloud);
+ 
+    // write to file
+    const std::string fname = "/point_clouds/" + _chunkId + ".dat";
+    std::ofstream file(fname, std::ios::binary);  
+    if (!file.is_open()) {
+        return;
+    }
+
+    int rows = pointCloud.rows;
+    file.write(reinterpret_cast<const char*>(&rows), sizeof(int));
+
+    size_t dataSize = pointCloud.total() * pointCloud.elemSize();
+    file.write(reinterpret_cast<const char*>(pointCloud.data), dataSize);
 
 }
 
-// void BaseChunk::loadPointClouds(){
-
-//     // create point clouds from build data
-//     // maybe add sample percentage param?
-//     for (auto& [key, part] : _parts) {
-//         const auto buildData = getBuildData(part);
-//         const int buildSize = buildData[1];
-//         const size_t n = buildData.size();
-//         int idx = 0;
-
-//         std::vector<cv::Mat> vects;
-//         cv::Mat color;
-        
-//         for (size_t i = 0; i < n; ++i) {
-//             if (buildData[i] & 1) {
-//                 color = ColorLib::getColor(buildData[i] >> 1);
-//                 if(!color.empty()){
-//                     cv::Mat pos(idxToPos(idx, buildSize));
-//                     cv::Mat merged;
-//                     cv::hconcat(pos, color, merged);
-//                     vects.push_back(std::move(merged));
-//                 }
-//                 ++idx;
-//             } else {
-//                 const size_t repeat = buildData[i];
-//                 if(color.empty())
-//                     for(size_t j = 0; j < repeat; ++j){
-//                         cv::Mat pos(idxToPos(idx + j, buildSize));
-//                         cv::Mat merged;
-//                         cv::hconcat(pos, color, merged);
-//                         vects.push_back(std::move(merged));
-//                     }
-//                 idx += repeat;
-//             }
-//         }
-
-//         cv::Mat pointCloud;
-//         cv::vconcat(vects, pointCloud);
-//         _pointClouds[key] = std::move(pointCloud);
-//     }
-
-// }
+void BaseChunk::update() {
+    uploadParts();
+    savePointCloud();
+}
