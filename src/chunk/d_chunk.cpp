@@ -90,25 +90,29 @@ void DChunk::downloadPlotUpdates() {
             extJsonFields["owner"] = it->second.c_str();
         }
 
+        std::vector<std::uint8_t> jsonPart;
+        std::vector<std::uint8_t> buildPart;
     
         if (flags.setDefaultPlot) {
-            const auto defJsonVec(Plot::makeJsonData(extJsonFields));
-            const std::span<const std::uint8_t> defJsonSpan(defJsonVec);
-            const std::span<const std::uint8_t> defBuildSpan(Plot::getDefaultBuildData());
-
-            _parts[plotId] = std::move(Plot::makePlotData(defJsonSpan, defBuildSpan));
-
+            jsonPart = Plot::makeJsonData(extJsonFields);
+            buildPart = Plot::getDefaultBuildData();
         } else {
-            // request new plot data
+            // request new data if needed
             if (!flags.updateMetadataFieldsOnly || !_parts.contains(plotId)) {
                 auto& body = res.GetBody();
-                _parts[plotId] = std::move(std::vector<uint8_t>(std::istreambuf_iterator<char>(body), std::istreambuf_iterator<char>()));
+                _parts[plotId] = std::vector<uint8_t>{
+                    std::istreambuf_iterator<char>(body), 
+                    std::istreambuf_iterator<char>()
+                };
             }
 
             // set default build on flag or build size violation
             if (flags.setDefaultBuild || (!verified && Plot::getBuildSize(_parts[plotId]) > VARS::BUILD_SIZE_STD))
-                _parts[plotId] = std::move(Plot::setBuildPart(_parts[plotId], Plot::getDefaultBuildData()));
+                buildPart = Plot::getDefaultBuildData();
+            else
+                buildPart = Plot::getBuildPart(_parts[plotId]);
 
+            nlohmann::json json = Plot::getJsonPart(_parts[plotId]);
             if (!verified) {
                 extJsonFields["link"] = "";
                 extJsonFields["linkTitle"] = "";

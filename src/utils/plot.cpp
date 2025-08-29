@@ -45,6 +45,19 @@ std::vector<std::uint16_t> Plot::getBuildPart(const std::vector<std::uint8_t>& p
  
 }
 
+std::vector<std::uint8_t> Plot::getBuildDataU8(const std::vector<std::uint8_t>& plotData) {
+
+    const size_t jsonLen = getUint32LE(&plotData[0]);
+    const size_t buildLen = getUint32LE(&plotData[jsonLen + 4]);
+
+    // skip to build part
+    std::vector<std::uint16_t> buildData(buildLen / 2);
+    std::memcpy(&buildData[0], &plotData[jsonLen + 8], buildLen);
+
+    return buildData;
+ 
+}
+
 int Plot::getBuildSize(const std::vector<std::uint8_t>& plotData) {
 
     const size_t jsonLen = getUint32LE(&plotData[0]);
