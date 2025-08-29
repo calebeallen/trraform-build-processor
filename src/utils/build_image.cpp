@@ -90,7 +90,7 @@ static void rasterize(
 
 
 // light-weight renderer
-std::vector<uint8_t> BuildImage::make(const std::span<uint16_t>& buildData) {
+std::vector<std::uint8_t> BuildImage::make(const std::vector<std::uint16_t>& buildData) {
 
     const float aspect = static_cast<float>(IMG_WIDTH) / IMG_HEIGHT;
     const int bs = buildData[1];

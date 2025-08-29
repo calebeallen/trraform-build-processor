@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <cstdint>
 #include <string>
+#include <optional>
 
 class ChunkData {
 
@@ -24,6 +25,6 @@ public:
     ChunkData(const std::string&);
 
     virtual void process();
-    virtual void update();
+    virtual std::optional<std::string> update();
 
 };

@@ -5,11 +5,15 @@
 #include <fstream>
 
 #include <opencv2/core.hpp>
+#include <cpr/cpr.h>
 
 #include "chunk/base_chunk.hpp"
 #include "config/config.hpp"
 #include "utils/color_lib.hpp"
 #include "utils/utils.hpp"
+#include "utils/plot.hpp"
+
+BaseChunk::BaseChunk(const std::string& _chunkId) : DChunk(_chunkId) {}
 
 void BaseChunk::savePointCloud(){
 
@@ -17,7 +21,7 @@ void BaseChunk::savePointCloud(){
     std::vector<cv::Mat> points;
 
     for (auto& [plotId, part] : _parts) {
-        const auto buildData = getBuildData(part);
+        const auto buildData = Plot::getBuildPart(part);
         const int bs = buildData[1];
 
         std::vector<std::tuple<int,int>> vox;
@@ -76,7 +80,16 @@ void BaseChunk::savePointCloud(){
 
 }
 
-void BaseChunk::update() {
+std::optional<std::string> BaseChunk::update() {
+
     uploadParts();
     savePointCloud();
+
+    // make next update chunk id
+    const auto locId = std::get<0>(parseChunkIdStr(_chunkId));
+    const auto nextLocId = getMappedBwd(1, locId);
+    const auto nextChunkId = makeChunkIdStr(1, nextLocId, true);
+
+    return nextChunkId;
+
 }

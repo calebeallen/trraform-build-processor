@@ -11,6 +11,8 @@
 #include "chunk/chunk_data.hpp"
 
 typedef struct {
+    bool updateMetadataFieldsOnly = false;
+    bool setDefaultPlot = false;
     bool setDefaultBuild = false;
     bool noImageUpdate = false;
 } UpdateFlags;
@@ -24,18 +26,9 @@ protected:
     void downloadPlotUpdates();
 
 public:
-    // plot helpers (maybe move to sep namespace?)
-    static const std::vector<uint8_t>& getDefaultBuildData();
-    static const std::span<uint16_t> getBuildData(std::vector<std::uint8_t>&);
-    static int getBuildSize(const std::vector<std::uint8_t>&);
-    static void setPlotDataBuild(std::vector<std::uint8_t>&, const std::vector<uint8_t>&);
-    static void setPlotDataJson(std::vector<std::uint8_t>&, const nlohmann::json&);
-    static int getLocPlotId(const int);
-    static int getLocPlotId(const std::string&);
-
     DChunk(sw::redis::Redis&,std::string&);
 
     void process() override;
-    void update() override;
+    virtual std::optional<std::string> update() override;
     
 };

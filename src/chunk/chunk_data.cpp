@@ -45,7 +45,7 @@ const int ChunkData::getMappedBwd(const int layer, const int locId){
             std::array<int, VARS::L2_SIZE> map;
             std::ifstream file("chunk_maps/l2.bin", std::ios::binary);
             if (!file) 
-                throw std::runtime_error("Failed to open l1.bin");
+                throw std::runtime_error("Failed to open l2.bin");
 
             int buf[2];
             while (file.read(reinterpret_cast<char*>(buf), sizeof(buf))) {

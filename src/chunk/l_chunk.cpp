@@ -161,7 +161,17 @@ void LChunk::process(){
 
 }
 
-void LChunk::update() {
+std::optional<std::string> LChunk::update() {
+    
     uploadParts();
     savePointCloud();
+
+    const auto splitId = parseChunkIdStr(_chunkId);
+    const int layer = std::get<0>(splitId);
+    if (layer == 0)
+        return;
+
+    const int nextLocId = getMappedBwd(layer - 1, std::get<1>(splitId));
+    return makeChunkIdStr(1, nextLocId, true);
+
 }

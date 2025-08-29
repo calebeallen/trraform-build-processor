@@ -1,6 +1,7 @@
 #pragma once
 
 #include <unordered_map>
+#include <string>
 
 #include <opencv2/core.hpp>
 
@@ -15,7 +16,9 @@ protected:
     void savePointCloud();
 
 public:
+    LChunk(const std::string&);
+
     void process() override;
-    void update() override;
+    std::optional<std::string> update() override;
 
 };
