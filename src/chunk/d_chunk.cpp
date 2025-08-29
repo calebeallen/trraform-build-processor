@@ -5,6 +5,7 @@
 #include <string>
 #include <sstream>
 
+
 #include <opencv2/core.hpp>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
@@ -89,12 +90,12 @@ void DChunk::downloadPlotUpdates() {
         if (auto it = metaStream.find("owner"); it != metaStream.end()) {
             extJsonFields["owner"] = it->second.c_str();
         }
-
-        std::vector<std::uint8_t> jsonPart;
-        std::vector<std::uint8_t> buildPart;
+        
+        nlohmann::json json;
+        std::span<const std::uint8_t> buildPart;
     
         if (flags.setDefaultPlot) {
-            jsonPart = Plot::makeJsonData(extJsonFields);
+            json = Plot::getDefaultJsonPart();
             buildPart = Plot::getDefaultBuildData();
         } else {
             // request new data if needed
@@ -106,22 +107,28 @@ void DChunk::downloadPlotUpdates() {
                 };
             }
 
+            // extract json part
+            json = Plot::getJsonPart(_parts[plotId]);
+            if (!verified) {
+                json["link"] = "";
+                json["linkTitle"] = "";
+            }
+
             // set default build on flag or build size violation
             if (flags.setDefaultBuild || (!verified && Plot::getBuildSize(_parts[plotId]) > VARS::BUILD_SIZE_STD))
                 buildPart = Plot::getDefaultBuildData();
             else
-                buildPart = Plot::getBuildPart(_parts[plotId]);
-
-            nlohmann::json json = Plot::getJsonPart(_parts[plotId]);
-            if (!verified) {
-                extJsonFields["link"] = "";
-                extJsonFields["linkTitle"] = "";
-            }
-
-            // set metadata fields
-            _parts[plotId] = std::move(Plot::modifyJsonPart(_parts[plotId], extJsonFields));
+                buildPart = Plot::getBuildData(_parts[plotId]);
             
         }
+
+        // set external fields
+        for (const auto [k,v] : extJsonFields.items())
+            json[k] = v;
+
+        // repack plot data
+        const std::vector<std::uint8_t> jsonData = nlohmann::json::to_cbor(json);
+        _parts[plotId] = Plot::makePlotData(jsonData, buildPart);
 
     }
 

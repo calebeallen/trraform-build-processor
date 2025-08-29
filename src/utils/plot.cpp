@@ -1,6 +1,9 @@
 #include <vector>
 #include <span>
 #include <cstdint>
+#include <fstream>    
+#include <stdexcept>
+#include <iterator>    
 
 #include <nlohmann/json.hpp>
 
@@ -20,7 +23,51 @@ static void setUint32LE(uint8_t* data, std::uint32_t val) {
     data[3] = static_cast<uint8_t>(val >> 24);
 }
 
-// todo get default build
+
+nlohmann::json Plot::getDefaultJsonPart() {
+
+    nlohmann::json j;
+    j["ver"] = 0;
+    j["name"] = "";
+    j["desc"] = "";
+    j["link"] = "";
+    j["linkTitle"] = "";
+    j["owner"] = "";
+    j["verified"] = false;
+    j["status"] = "";
+    return j;
+
+}
+
+
+const std::span<const std::uint8_t> Plot::getDefaultBuildData() {
+
+    static const auto defaultBuild = []() {
+        std::ifstream file("static/default_build.dat", std::ios::binary);
+        if (!file) {
+            throw std::runtime_error("Failed to open static/default_build.dat");
+        }
+
+        std::vector<std::uint8_t> data(
+            (std::istreambuf_iterator<char>(file)),
+            (std::istreambuf_iterator<char>())
+        );
+
+        return data;
+    }();
+
+    return defaultBuild;
+
+}
+
+
+const std::span<const std::uint8_t> Plot::getBuildData(const std::vector<std::uint8_t>& plotData) {
+
+    const size_t jsonLen = getUint32LE(&plotData[0]);
+    return std::span<const std::uint8_t>(plotData.begin() + jsonLen + 8, plotData.end());
+ 
+}
+
 nlohmann::json Plot::getJsonPart(std::vector<std::uint8_t>& plotData) {
 
     const size_t jsonLen = getUint32LE(&plotData[0]);
@@ -37,20 +84,7 @@ std::vector<std::uint16_t> Plot::getBuildPart(const std::vector<std::uint8_t>& p
     const size_t jsonLen = getUint32LE(&plotData[0]);
     const size_t buildLen = getUint32LE(&plotData[jsonLen + 4]);
 
-    // skip to build part
-    std::vector<std::uint16_t> buildData(buildLen / 2);
-    std::memcpy(&buildData[0], &plotData[jsonLen + 8], buildLen);
-
-    return buildData;
- 
-}
-
-std::vector<std::uint8_t> Plot::getBuildDataU8(const std::vector<std::uint8_t>& plotData) {
-
-    const size_t jsonLen = getUint32LE(&plotData[0]);
-    const size_t buildLen = getUint32LE(&plotData[jsonLen + 4]);
-
-    // skip to build part
+    // copy to avoid misalignment
     std::vector<std::uint16_t> buildData(buildLen / 2);
     std::memcpy(&buildData[0], &plotData[jsonLen + 8], buildLen);
 
@@ -85,57 +119,5 @@ std::vector<std::uint8_t> Plot::makePlotData(const std::span<const std::uint8_t>
     std::memcpy(&plotData[jsonLen + 8], &buildData[0], buildLen);
 
     return plotData;
-
-}
-
-std::vector<std::uint8_t> Plot::makeJsonData(const nlohmann::json& fields) {
-
-    nlohmann::json j;
-    j["ver"] = 0;
-    j["name"] = "";
-    j["desc"] = "";
-    j["link"] = "";
-    j["linkTitle"] = "";
-    j["owner"] = "";
-    j["verified"] = false;
-    j["status"] = "";
-    
-    for (const auto& [k,v] : fields.items())
-        j[k] = v;
-
-    return nlohmann::json::to_cbor(j);
-
-}
-
-std::vector<std::uint8_t> Plot::modifyJsonPart(const std::vector<std::uint8_t>& plotData, const nlohmann::json& updates) {
-
-    // unpack json
-    const size_t jsonLen = getUint32LE(&plotData[0]);
-    const char* begin = reinterpret_cast<const char*>(&plotData[4]);
-    const char* end = begin + jsonLen;
-    nlohmann::json json = nlohmann::json::parse(begin, end, nullptr, true, false);
-
-    // update fields
-    for (auto& [k,v] : updates.items()) 
-        json[k] = v;
-
-    const std::span<const std::uint8_t> buildData(plotData.begin() + jsonLen + 8, plotData.end());
-    std::vector<std::uint8_t> jsonVec = nlohmann::json::to_cbor(json);
-    const std::span<const std::uint8_t> jsonSpan(jsonVec);
-    return Plot::makePlotData(jsonSpan, buildData);
-
-}
-
-std::vector<std::uint8_t> Plot::setBuildPart(const std::vector<std::uint8_t>& plotData, const std::vector<std::uint8_t>& newBuildData) {
-
-    const size_t jsonLen = getUint32LE(&plotData[0]);
-    const size_t oldBuildLen = getUint32LE(&plotData[jsonLen + 4]);
-    const size_t newBuildLen = newBuildData.size();
-    const size_t offset = jsonLen + 8;
-
-    const std::span<const std::uint8_t> jsonDataSpan(plotData.begin() + 4, plotData.begin() + jsonLen + 4);
-    const std::span<const std::uint8_t> buildDataSpan(newBuildData);
-
-    return Plot::makePlotData(jsonDataSpan, buildDataSpan);
 
 }
