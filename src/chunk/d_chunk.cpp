@@ -83,7 +83,7 @@ void DChunk::downloadPlotUpdates() {
         nlohmann::json extJsonFields;
         bool verified;
         if (auto it = metaStream.find("verified"); it != metaStream.end()) {
-            verified = it->second.c_str() == "true";   
+            verified = it->second == "true";   
             extJsonFields["verified"] = verified;
         }
         if (auto it = metaStream.find("owner"); it != metaStream.end()) {
