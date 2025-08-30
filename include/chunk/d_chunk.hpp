@@ -26,8 +26,9 @@ protected:
     void downloadPlotUpdates();
 
 public:
-    DChunk(sw::redis::Redis&,std::string&);
+    DChunk(std::string, std::vector<std::uint64_t>, std::vector<UpdateFlags>);
 
+    virtual void prep() override;
     void process() override;
     virtual std::optional<std::string> update() override;
     

@@ -137,8 +137,9 @@ const std::tuple<int,int> ChunkData::parseChunkIdStr(const std::string& id){
 
 }
 
-ChunkData::ChunkData(const std::string& _chunkId) : _chunkId(_chunkId){
-    downloadParts();
+ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate) {
+    _chunkId = chunkId;
+    _needsUpdate = std::move(needsUpdate);
 };
 
 void ChunkData::downloadParts() {

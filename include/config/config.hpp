@@ -26,8 +26,10 @@ namespace VARS {
     inline const std::string REDIS_UPDATE_QUEUE_PREFIX = "up:q:";
     inline const std::string REDIS_UPDATE_NEEDS_UPDATE_PREFIX = "up:nu:";
     inline const std::string REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX = "up:nu:f";
-    inline const std::string REDIS_NO_IMAGE_UPDATE_FLAG = "niu";
-    inline const std::string REDIS_SET_DEFAULT_BUILD_FLAG = "sdb";
+    inline const std::string REDIS_FLAG_UPDATE_METADATA_FIELDS_ONLY = "mfo";
+    inline const std::string REDIS_FLAG_SET_DEFAULT_PLOT = "sdp";
+    inline const std::string REDIS_FLAG_SET_DEFAULT_BUILD = "sdb";
+    inline const std::string REDIS_FLAG_NO_IMAGE_UPDATE = "niu";
 
 }
 

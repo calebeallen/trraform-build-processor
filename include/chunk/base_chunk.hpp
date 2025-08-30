@@ -6,12 +6,10 @@
 
 class BaseChunk : public DChunk {
 
-protected:
-    void savePointCloud();
-
 public:
-    BaseChunk(const std::string&);
+    BaseChunk(std::string, std::vector<std::uint64_t>, std::vector<UpdateFlags>);
 
+    void prep() override;
     std::optional<std::string> update() override;
 
 };

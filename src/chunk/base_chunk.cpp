@@ -13,10 +13,20 @@
 #include "utils/utils.hpp"
 #include "utils/plot.hpp"
 
-BaseChunk::BaseChunk(const std::string& _chunkId) : DChunk(_chunkId) {}
+BaseChunk::BaseChunk(std::string chunkId, std::vector<std::uint64_t> needsUpdate, std::vector<UpdateFlags> updateFlags) : DChunk(chunkId, std::move(needsUpdate), std::move(updateFlags)) {}
 
-void BaseChunk::savePointCloud(){
+void BaseChunk::prep() {
 
+    downloadParts();
+    downloadPlotUpdates();
+
+}
+
+std::optional<std::string> BaseChunk::update() {
+
+    uploadParts();
+
+    // sample points for parent chunk to use
     cv::RNG rng;
     std::vector<cv::Mat> points;
 
@@ -77,13 +87,6 @@ void BaseChunk::savePointCloud(){
 
     size_t dataSize = pointCloud.total() * pointCloud.elemSize();
     file.write(reinterpret_cast<const char*>(pointCloud.data), dataSize);
-
-}
-
-std::optional<std::string> BaseChunk::update() {
-
-    uploadParts();
-    savePointCloud();
 
     // make next update chunk id
     const auto locId = std::get<0>(parseChunkIdStr(_chunkId));

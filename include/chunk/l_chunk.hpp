@@ -9,15 +9,13 @@
 
 class LChunk : public ChunkData {
 
-protected:
+private:
     std::unordered_map<int,cv::Mat> _pointClouds;
 
-    void loadPointClouds();
-    void savePointCloud();
-
 public:
-    LChunk(const std::string&);
+    LChunk(std::string, std::vector<std::uint64_t>);
 
+    void prep() override;
     void process() override;
     std::optional<std::string> update() override;
 

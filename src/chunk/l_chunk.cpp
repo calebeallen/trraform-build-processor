@@ -6,7 +6,11 @@
 #include "config/config.hpp"
 #include "chunk/l_chunk.hpp"
 
-void LChunk::loadPointClouds(){
+LChunk::LChunk(std::string chunkId, std::vector<std::uint64_t> needsUpdate) : ChunkData(chunkId, std::move(needsUpdate)) {}
+
+void LChunk::prep(){
+
+    downloadParts();
 
     // get child ids of vector
     auto idParts = parseChunkIdStr(_chunkId);
@@ -32,47 +36,6 @@ void LChunk::loadPointClouds(){
 
         _pointClouds[chli] = std::move(pointCloud);
     }
-
-}
-
-void LChunk::savePointCloud(){
-
-    std::vector<cv::Mat> samples;
-    cv::RNG rng;
-
-    // sample points from children
-    for(const auto& [_, mat] : _pointClouds){
-        int n = mat.rows;
-        int nf = (float)(mat.rows);
-
-        int sampleCount = std::max(1, (int)(n * VARS::PC_SAMPLE_PERC));
-
-        std::vector<int> idxs(n);
-        for (int i = 0; i < n; ++i)
-            idxs[i] = i;
-
-        std::shuffle(idxs.begin(), idxs.end(), rng);
-
-        for (int i = 0; i < sampleCount; ++i)
-            samples.push_back(mat.row(idxs[i]));
-    }
-
-    cv::Mat pointCloud;
-    cv::vconcat(samples, pointCloud);
- 
-    // write to file
-    const std::string fname = "/point_clouds/" + _chunkId + ".dat";
-    std::ofstream file(fname, std::ios::binary);  
-    if (!file.is_open()) {
-        
-        return;
-    }
-
-    int rows = pointCloud.rows;
-    file.write(reinterpret_cast<const char*>(&rows), sizeof(int));
-
-    size_t dataSize = pointCloud.total() * pointCloud.elemSize();
-    file.write(reinterpret_cast<const char*>(pointCloud.data), dataSize);
 
 }
 
@@ -162,15 +125,49 @@ void LChunk::process(){
 }
 
 std::optional<std::string> LChunk::update() {
-    
-    uploadParts();
-    savePointCloud();
 
-    const auto splitId = parseChunkIdStr(_chunkId);
-    const int layer = std::get<0>(splitId);
+    uploadParts();
+
+    const auto splitId = ChunkData::parseChunkIdStr(_chunkId);
+    int layer = std::get<0>(splitId);
     if (layer == 0)
         return;
 
+    // sample points for parent chunk to use
+    std::vector<cv::Mat> samples;
+    cv::RNG rng;
+
+    for(const auto& [_, mat] : _pointClouds){
+        int n = mat.rows;
+        int nf = (float)(mat.rows);
+
+        int sampleCount = std::max(1, (int)(n * VARS::PC_SAMPLE_PERC));
+
+        std::vector<int> idxs(n);
+        for (int i = 0; i < n; ++i)
+            idxs[i] = i;
+
+        std::shuffle(idxs.begin(), idxs.end(), rng);
+
+        for (int i = 0; i < sampleCount; ++i)
+            samples.push_back(mat.row(idxs[i]));
+    }
+
+    cv::Mat pointCloud;
+    cv::vconcat(samples, pointCloud);
+ 
+    const std::string fname = "/point_clouds/" + _chunkId + ".dat";
+    std::ofstream file(fname, std::ios::binary);  
+    if (!file.is_open())
+        return;
+
+    int rows = pointCloud.rows;
+    file.write(reinterpret_cast<const char*>(&rows), sizeof(int));
+
+    size_t dataSize = pointCloud.total() * pointCloud.elemSize();
+    file.write(reinterpret_cast<const char*>(pointCloud.data), dataSize);
+
+    // create parent chunk id for update
     const int nextLocId = getMappedBwd(layer - 1, std::get<1>(splitId));
     return makeChunkIdStr(1, nextLocId, true);
 

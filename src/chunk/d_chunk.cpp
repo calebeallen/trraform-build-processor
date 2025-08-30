@@ -19,41 +19,12 @@
 #include "utils/plot.hpp"
 
 
-DChunk::DChunk(sw::redis::Redis& redisCli, std::string& _chunkId) : ChunkData(_chunkId) {
+DChunk::DChunk(std::string chunkId, std::vector<std::uint64_t> needsUpdate, std::vector<UpdateFlags> updateFlags) : ChunkData(chunkId, std::move(needsUpdate)) {
 
-    // get plot ids that need update
-    std::unordered_set<std::string> nu;
-    redisCli.smembers(VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + _chunkId, std::inserter(nu, nu.begin()));
-
-    std::vector<std::string> getFlagsKeys;
-    for (const auto &plotId : nu) {
-        getFlagsKeys.push_back(VARS::REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + plotId);
-        _needsUpdate.push_back(stoll(plotId, nullptr, 16));
-    }
-
-    // get update flags for plot ids that need update
-    std::vector<std::optional<std::string>> flags;
-    redisCli.mget(getFlagsKeys.begin(), getFlagsKeys.end(), std::back_inserter(flags));
-    _updateFlags.resize(_needsUpdate.size());
-
-    for (size_t i = 0; i < _updateFlags.size(); ++i) {
-        if (flags[i]) {
-            std::stringstream ss(*flags[i]);
-            std::string token;
-            
-            while (std::getline(ss, token, ' ')) {
-                if (token == VARS::REDIS_NO_IMAGE_UPDATE_FLAG)
-                    _updateFlags[i].noImageUpdate = true;
-                else if (token == VARS::REDIS_SET_DEFAULT_BUILD_FLAG)
-                    _updateFlags[i].setDefaultBuild = true;
-            }
-        }
-    }
-
-    // pull updates after parsing needs update + flags
-    downloadPlotUpdates();
+    _updateFlags = std::move(updateFlags);
 
 }
+
 
 void DChunk::downloadPlotUpdates() {
 
@@ -134,6 +105,13 @@ void DChunk::downloadPlotUpdates() {
 
 }
 
+void DChunk::prep() {
+
+    downloadParts();
+    downloadPlotUpdates();
+
+}
+
 void DChunk::process() {
 
     // create new images for plots that need update
@@ -148,5 +126,7 @@ void DChunk::process() {
 }
 
 std::optional<std::string> DChunk::update() {
+
     uploadParts();
+    
 }
