@@ -4,7 +4,7 @@
 #include <unordered_map>
 #include <vector>
 
-#include <opencv2/opencv.hpp>
+#include <opencv2/core.hpp>
 #include <sw/redis++/redis++.h>
 #include <nlohmann/json.hpp>
 

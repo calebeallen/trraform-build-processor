@@ -1,10 +1,19 @@
 #include <unordered_set>
 #include <string>
 #include <tuple>
-#include <semaphore>
 #include <iterator>
+#include <memory>
 
-#include <sw/redis++/redis++.h>
+#include <boost/asio.hpp>
+#include <boost/asio/thread_pool.hpp>
+#include <boost/asio/awaitable.hpp>
+#include <boost/asio/co_spawn.hpp>
+#include <boost/asio/detached.hpp>
+#include <boost/asio/steady_timer.hpp>
+#include <boost/redis.hpp>
+#include <boost/redis/connection.hpp>
+#include <boost/redis/request.hpp>
+#include <boost/redis/adapter/adapt.hpp>
 
 #include "thread_pool/thread_pool.hpp"
 #include "chunk/chunk_data.hpp"
@@ -13,6 +22,106 @@
 #include "chunk/base_chunk.hpp"
 #include "chunk/d_chunk.hpp"
 #include "chunk/l_chunk.hpp"
+
+namespace redis = boost::redis;
+namespace asio = boost::asio;
+
+asio::awaitable<void> processChunk(
+    std::string chunkId, 
+    redis::connection& redisCli, 
+    asio::thread_pool& pool, 
+    std::shared_ptr<int> inFlight
+) {
+    ++ *inFlight;
+
+    std::vector<std::string> needsUpdateStrs;
+    {
+        redis::request req;
+        redis::response<std::vector<std::string>> res;
+        req.push("SMEMBERS", VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + chunkId);
+        co_await redisCli.async_exec(req, res, asio::use_awaitable);
+        needsUpdateStrs = std::get<0>(res).value();
+    }
+        
+
+    // convert ids to int
+    std::vector<std::uint64_t> needsUpdate;
+    needsUpdate.reserve(needsUpdateStrs.size());
+    for(const auto& idStr : needsUpdateStrs)
+        needsUpdate.push_back(std::stoll(idStr, nullptr, 16));
+
+    const auto chunkIdParts = ChunkData::parseChunkIdStr(chunkId);
+    bool isBaseChunk = chunkId[0] == 'l' && std::get<0>(chunkIdParts) == 2;
+    ChunkData chunk;
+
+    if (chunkId[0] != 'l' || isBaseChunk) {
+        // make update flag keys
+        std::vector<std::string> getFlagsKeys;
+        for (const auto &plotId : needsUpdateStrs)
+            getFlagsKeys.push_back(VARS::REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + plotId);
+
+        // get update flags
+        std::vector<std::optional<std::string>> flagStrs;
+        {
+            redis::request req;
+            redis::response<std::vector<std::optional<std::string>>> res;
+            req.push_range("MGET", getFlagsKeys.begin(), getFlagsKeys.end());
+            co_await redisCli.async_exec(req, res, asio::use_awaitable);
+            flagStrs = std::get<0>(res).value();
+        }
+
+        // parse update flag strings
+        std::vector<UpdateFlags> updateflags(needsUpdateStrs.size());
+        for (size_t i = 0; i < updateflags.size(); ++i) {
+            if (flagStrs[i]) {
+                std::stringstream ss(*flagStrs[i]);
+                std::string token;
+                
+                while (std::getline(ss, token, ' ')) {
+                    if (token == VARS::REDIS_FLAG_UPDATE_METADATA_FIELDS_ONLY)
+                        updateflags[i].updateMetadataFieldsOnly = true;
+                    else if (token == VARS::REDIS_FLAG_SET_DEFAULT_PLOT)
+                        updateflags[i].setDefaultPlot = true;
+                    else if (token == VARS::REDIS_FLAG_SET_DEFAULT_BUILD)
+                        updateflags[i].setDefaultBuild = true;
+                    else if (token == VARS::REDIS_FLAG_NO_IMAGE_UPDATE)
+                        updateflags[i].noImageUpdate = true;
+                }
+            }
+        }
+
+        if (isBaseChunk)
+            chunk = BaseChunk(chunkId, needsUpdate, updateflags);
+        else
+            chunk = DChunk(chunkId, needsUpdate, updateflags);
+
+    } else
+        chunk = LChunk(chunkId, needsUpdate);
+
+    // pipeline
+    chunk.prep();
+
+    // process chunk on thread pool
+    co_await asio::co_spawn(pool.get_executor(), [&chunk]() -> asio::awaitable<void> {
+        chunk.process();
+        co_return;
+    }, asio::use_awaitable);
+
+    const auto nextChunkId = chunk.update();
+    if (nextChunkId) {
+        const nextLayer = 
+        
+        {
+            redis::request req;
+            redis::response<std::vector<std::optional<std::string>>> res;
+            req.push("ADD", VARS::
+        }
+    }
+
+    -- *inFlight;
+}
+
+
 
 int main() {
 
