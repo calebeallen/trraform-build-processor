@@ -7,6 +7,7 @@
 class BaseChunk : public DChunk {
 
 public:
+    BaseChunk() = default;
     BaseChunk(std::string, std::vector<std::uint64_t>, std::vector<UpdateFlags>);
 
     void prep() override;

@@ -27,6 +27,7 @@ protected:
 
 public:
     DChunk(std::string, std::vector<std::uint64_t>, std::vector<UpdateFlags>);
+    virtual ~DChunk() = default;
 
     virtual void prep() override;
     void process() override;

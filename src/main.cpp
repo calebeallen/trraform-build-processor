@@ -3,6 +3,7 @@
 #include <tuple>
 #include <iterator>
 #include <memory>
+#include <variant>
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -27,32 +28,49 @@ namespace redis = boost::redis;
 namespace asio = boost::asio;
 
 asio::awaitable<void> processChunk(
-    std::string chunkId, 
+    int qlvl,
     redis::connection& redisCli, 
     asio::thread_pool& pool, 
     std::shared_ptr<int> inFlight
 ) {
     ++ *inFlight;
 
+    // pop chunk from queue, get children that need update
+    std::string chunkId;
     std::vector<std::string> needsUpdateStrs;
-    {
-        redis::request req;
-        redis::response<std::vector<std::string>> res;
-        req.push("SMEMBERS", VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + chunkId);
-        co_await redisCli.async_exec(req, res, asio::use_awaitable);
-        needsUpdateStrs = std::get<0>(res).value();
-    }
-        
-
-    // convert ids to int
     std::vector<std::uint64_t> needsUpdate;
-    needsUpdate.reserve(needsUpdateStrs.size());
-    for(const auto& idStr : needsUpdateStrs)
-        needsUpdate.push_back(std::stoll(idStr, nullptr, 16));
+    {
+        static const std::string script = R"(
+            local chunkId = redis.call('RPOP', KEYS[1])
+            if not chunkId then
+                return nil
+            end
+            
+            local set_key = ARGV[1] .. chunkId
+            local needsUpdate = redis.call('SMEMBERS', set_key)
+            redis.call('DEL', set_key)
+            
+            return {chunkId, needsUpdate}
+        )";
+        redis::request req;
+        redis::response<std::optional<std::tuple<std::string, std::vector<std::string>>>> res;
+        req.push("EVAL", script, "1", std::format("{}{}:", VARS::REDIS_UPDATE_QUEUE_PREFIX, qlvl), VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX);
+        co_await redisCli.async_exec(req, res, asio::use_awaitable);
+        const auto result = std::get<0>(res).value();
+        if (!result)
+            co_return;
+
+        chunkId = std::get<0>(*result);
+        needsUpdateStrs = std::get<1>(*result);
+
+        needsUpdate.reserve(needsUpdateStrs.size());
+        for(const auto& idStr : needsUpdateStrs)
+            needsUpdate.push_back(std::stoll(idStr, nullptr, 16));
+    }
 
     const auto chunkIdParts = ChunkData::parseChunkIdStr(chunkId);
     bool isBaseChunk = chunkId[0] == 'l' && std::get<0>(chunkIdParts) == 2;
-    ChunkData chunk;
+    std::unique_ptr<ChunkData> chunk;
 
     if (chunkId[0] != 'l' || isBaseChunk) {
         // make update flag keys
@@ -91,31 +109,50 @@ asio::awaitable<void> processChunk(
         }
 
         if (isBaseChunk)
-            chunk = BaseChunk(chunkId, needsUpdate, updateflags);
+            chunk = std::make_unique<BaseChunk>(chunkId, needsUpdate, updateflags);
         else
-            chunk = DChunk(chunkId, needsUpdate, updateflags);
+            chunk = std::make_unique<DChunk>(chunkId, needsUpdate, updateflags);
 
     } else
-        chunk = LChunk(chunkId, needsUpdate);
+        chunk = std::make_unique<LChunk>(chunkId, needsUpdate);
 
     // pipeline
-    chunk.prep();
+    chunk->prep();
 
     // process chunk on thread pool
     co_await asio::co_spawn(pool.get_executor(), [&chunk]() -> asio::awaitable<void> {
-        chunk.process();
+        chunk->process();
         co_return;
     }, asio::use_awaitable);
 
-    const auto nextChunkId = chunk.update();
+    const auto nextChunkId = chunk->update();
     if (nextChunkId) {
-        const nextLayer = 
-        
-        {
-            redis::request req;
-            redis::response<std::vector<std::optional<std::string>>> res;
-            req.push("ADD", VARS::
-        }
+        int nextLayer = std::get<0>(ChunkData::parseChunkIdStr(*nextChunkId));
+        static const std::string script = R"(
+            local chunkId = ARGV[1]
+
+            local set_key = ARGV[3] .. chunkId
+            local existed = redis.call('EXISTS', set_key)
+            local added = redis.call('SADD', set_key, ARGV[2])
+
+            if existed == 0 and added > 0 then
+                local queue_key = ARGV[4]
+                redis.call('LPUSH', queue_key, chunkId)
+            end
+        )";
+    
+        redis::request req;
+        redis::response<int> res;
+        req.push(
+            "EVAL", 
+            script, 
+            "0", 
+            nextChunkId,
+            chunkId,
+            VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX,
+            std::format("{}{}:", VARS::REDIS_UPDATE_QUEUE_PREFIX, nextLayer)
+        );
+        co_await redisCli.async_exec(req, res, asio::use_awaitable); 
     }
 
     -- *inFlight;
@@ -145,85 +182,9 @@ int main() {
 
     sw::redis::Redis redisCli(redisOpts, redisPoolOpts);
 
-    ThreadPool ioPool(IO_POOL_SIZE);
+   
     ThreadPool cpuPool(CPU_POOL_SIZE);
-    std::counting_semaphore<> inflight(4);
-
-    /* update loop */
-
-    std::string chunkId;
-
-    ioPool.post([&]{
-        inflight.acquire();
-
-        // get list of chunk members that need update
-        std::unordered_set<std::string> needsUpdateStrs;
-        redisCli.smembers(VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + chunkId, std::inserter(needsUpdateStrs, needsUpdateStrs.begin()));
-
-        // convert ids to int
-        std::vector<std::uint64_t> needsUpdate;
-        needsUpdate.reserve(needsUpdateStrs.size());
-        for(const auto& idStr : needsUpdateStrs)
-            needsUpdate.push_back(std::stoll(idStr, nullptr, 16));
-
-        ChunkData chunk;
-
-        const auto chunkIdParts = ChunkData::parseChunkIdStr(chunkId);
-        bool isBaseChunk = chunkId[0] == 'l' && std::get<0>(chunkIdParts) == 2;
-
-        if (chunkId[0] != 'l' || isBaseChunk) {
-            // get update flags
-            std::vector<std::string> getFlagsKeys;
-            for (const auto &plotId : needsUpdateStrs)
-                getFlagsKeys.push_back(VARS::REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + plotId);
-
-            std::vector<std::optional<std::string>> flagStrs;
-            redisCli.mget(getFlagsKeys.begin(), getFlagsKeys.end(), std::back_inserter(flagStrs));
-
-            // parse flag strings
-            std::vector<UpdateFlags> updateflags(needsUpdateStrs.size());
-            for (size_t i = 0; i < updateflags.size(); ++i) {
-                if (flagStrs[i]) {
-                    std::stringstream ss(*flagStrs[i]);
-                    std::string token;
-                    
-                    while (std::getline(ss, token, ' ')) {
-                        if (token == VARS::REDIS_FLAG_UPDATE_METADATA_FIELDS_ONLY)
-                            updateflags[i].updateMetadataFieldsOnly = true;
-                        else if (token == VARS::REDIS_FLAG_SET_DEFAULT_PLOT)
-                            updateflags[i].setDefaultPlot = true;
-                        else if (token == VARS::REDIS_FLAG_SET_DEFAULT_BUILD)
-                            updateflags[i].setDefaultBuild = true;
-                        else if (token == VARS::REDIS_FLAG_NO_IMAGE_UPDATE)
-                            updateflags[i].noImageUpdate = true;
-                    }
-                }
-            }
-
-            if (isBaseChunk)
-                chunk = BaseChunk(chunkId, needsUpdate, updateflags);
-            else
-                chunk = DChunk(chunkId, needsUpdate, updateflags);
-
-        } else
-            chunk = LChunk(chunkId, needsUpdate);
-
-        // pipeline
-        chunk.prep();
-        cpuPool.post([&chunkId, &chunk, &ioPool, &inflight, &redisCli]{ 
-            chunk.process(); 
-            ioPool.post([&chunkId, &chunk, &inflight, &redisCli]{
-                const auto nextChunkId = chunk.update();
-                if (nextChunkId) {
-                    // update to redis
-                    redisCli.sadd(VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX, chunkId);
-                    // todo queue
-                }
-                inflight.release();
-            });
-        });
-
-    });
+    
 
     return 0;
 }

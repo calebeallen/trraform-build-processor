@@ -22,11 +22,11 @@ public:
     static std::string makeChunkIdStr(const int, const int, const bool);
     static const std::tuple<int,int> parseChunkIdStr(const std::string&);
 
-    ChunkData() = default;
     ChunkData(std::string, std::vector<std::uint64_t>);
+    virtual ~ChunkData() = default;
 
-    virtual void prep();
-    virtual void process();
-    virtual std::optional<std::string> update();
+    virtual void prep() = 0;
+    virtual void process() = 0;
+    virtual std::optional<std::string> update() = 0;
 
 };
