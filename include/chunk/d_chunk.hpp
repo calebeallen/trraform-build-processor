@@ -21,10 +21,11 @@ typedef struct {
 class DChunk : public ChunkData {
 
 protected:
-    std::unordered_map<uint64_t,std::vector<std::uint8_t>> _updatedJpegs;
+    std::unordered_map<uint64_t,std::vector<std::uint8_t>> _updatedImages;
     std::vector<UpdateFlags> _updateFlags;
    
     asio::awaitable<void> downloadPlotUpdates();
+    asio::awaitable<void> uploadImages();
 
 public:
     DChunk(std::string, std::vector<std::uint64_t>, std::vector<UpdateFlags>, std::shared_ptr<CFAsyncClient>);

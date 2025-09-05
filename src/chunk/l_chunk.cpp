@@ -130,14 +130,14 @@ void LChunk::process(){
 
 }
 
-std::optional<std::string> LChunk::update() {
+asio::awaitable<std::optional<std::string>> LChunk::update() {
 
-    uploadParts();
+    co_await uploadParts();
 
     const auto splitId = ChunkData::parseChunkIdStr(_chunkId);
     int layer = std::get<0>(splitId);
     if (layer == 0)
-        return;
+        co_return nullptr;
 
     // sample points for parent chunk to use
     std::vector<cv::Mat> samples;
@@ -165,7 +165,7 @@ std::optional<std::string> LChunk::update() {
     const std::string fname = "/point_clouds/" + _chunkId + ".dat";
     std::ofstream file(fname, std::ios::binary);  
     if (!file.is_open())
-        return;
+        co_return nullptr;
 
     int rows = pointCloud.rows;
     file.write(reinterpret_cast<const char*>(&rows), sizeof(int));
@@ -175,6 +175,6 @@ std::optional<std::string> LChunk::update() {
 
     // create parent chunk id for update
     const int nextLocId = getMappedBwd(layer - 1, std::get<1>(splitId));
-    return makeChunkIdStr(1, nextLocId, true);
+    co_return makeChunkIdStr(1, nextLocId, true);
 
 }

@@ -22,6 +22,7 @@ namespace VARS {
     inline const std::string CF_ZONE_ID = "64097c6d2cf0e0810ca05cdf8d4d1273";
     inline const std::string CF_CHUNKS_BUCKET = "chunks";
     inline const std::string CF_PLOTS_BUCKET = "plots";
+    inline const std::string CF_IMAGES_BUCKET = "images";
 
     inline const std::string REDIS_UPDATE_QUEUE_PREFIX = "up:q:";
     inline const std::string REDIS_UPDATE_NEEDS_UPDATE_PREFIX = "up:nu:";
