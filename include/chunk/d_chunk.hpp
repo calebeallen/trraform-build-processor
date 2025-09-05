@@ -5,10 +5,11 @@
 #include <vector>
 
 #include <opencv2/core.hpp>
-#include <sw/redis++/redis++.h>
 #include <nlohmann/json.hpp>
+#include <boost/asio/awaitable.hpp>
 
 #include "chunk/chunk_data.hpp"
+#include "utils/cf_async_client.hpp"
 
 typedef struct {
     bool updateMetadataFieldsOnly = false;
@@ -23,14 +24,14 @@ protected:
     std::unordered_map<uint64_t,std::vector<std::uint8_t>> _updatedJpegs;
     std::vector<UpdateFlags> _updateFlags;
    
-    void downloadPlotUpdates();
+    asio::awaitable<void> downloadPlotUpdates();
 
 public:
-    DChunk(std::string, std::vector<std::uint64_t>, std::vector<UpdateFlags>);
+    DChunk(std::string, std::vector<std::uint64_t>, std::vector<UpdateFlags>, std::shared_ptr<CFAsyncClient>);
     virtual ~DChunk() = default;
 
-    virtual void prep() override;
+    virtual asio::awaitable<void> prep() override;
     void process() override;
-    virtual std::optional<std::string> update() override;
+    virtual asio::awaitable<std::optional<std::string>> update() override;
     
 };

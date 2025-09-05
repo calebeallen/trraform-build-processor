@@ -4,46 +4,49 @@
 #include <stdexcept>
 #include <string>
 #include <sstream>
-
+#include <format>
 
 #include <opencv2/core.hpp>
 #include <aws/s3/S3Client.h>
 #include <aws/s3/model/GetObjectRequest.h>
-#include <sw/redis++/redis++.h>
 #include <nlohmann/json.hpp>
+#include <boost/asio/awaitable.hpp>
 
 #include "chunk/d_chunk.hpp"
 #include "config/config.hpp"
 #include "utils/cf_utils.hpp"
 #include "utils/build_image.hpp"
 #include "utils/plot.hpp"
+#include "utils/cf_async_client.hpp"
 
+namespace asio = boost::asio;
 
-DChunk::DChunk(std::string chunkId, std::vector<std::uint64_t> needsUpdate, std::vector<UpdateFlags> updateFlags) : ChunkData(chunkId, std::move(needsUpdate)) {
+DChunk::DChunk(
+    std::string chunkId, 
+    std::vector<std::uint64_t> needsUpdate, 
+    std::vector<UpdateFlags> updateFlags, 
+    std::shared_ptr<CFAsyncClient> cfCli
+) : ChunkData(chunkId, std::move(needsUpdate), cfCli) {
 
     _updateFlags = std::move(updateFlags);
 
 }
 
 
-void DChunk::downloadPlotUpdates() {
+asio::awaitable<void> DChunk::downloadPlotUpdates() {
 
-    // request all updated plots
-    std::vector<Aws::S3::Model::GetObjectOutcomeCallable> futures;
-    for (size_t i = 0; i < _needsUpdate.size(); ++i) {
-        const std::uint64_t plotId = _needsUpdate[i];
+    // pull updates
+    std::vector<std::string> needsUpdate(_needsUpdate.size());
+    for(size_t i = 0; i < _needsUpdate.size(); ++i)
+        needsUpdate[i] = std::format("{}", _needsUpdate[i]);
 
-        Aws::S3::Model::GetObjectRequest request;
-        request.SetBucket(VARS::CF_PLOTS_BUCKET);
-        request.SetKey(plotId + ".dat");
-        futures.emplace_back(CFUtils::r2Cli->GetObjectCallable(request), plotId);
-    }
+    auto updates = co_await _cfCli->getManyR2Objects(VARS::CF_PLOTS_BUCKET, needsUpdate);
 
     // set new plot data
-    for (size_t i = 0; i < _needsUpdate.size(); ++i) {
+    for (size_t i = 0; i < updates.size(); ++i) {
         const std::uint64_t plotId = _needsUpdate[i];
         const auto& flags = _updateFlags[i];
-        auto r = futures[i].get();
+        auto r = updates[i];
 
         if (!r.IsSuccess()) 
             continue;
@@ -105,10 +108,10 @@ void DChunk::downloadPlotUpdates() {
 
 }
 
-void DChunk::prep() {
+asio::awaitable<void> DChunk::prep() {
 
-    downloadParts();
-    downloadPlotUpdates();
+    co_await downloadParts();
+    co_await downloadPlotUpdates();
 
 }
 
@@ -125,8 +128,8 @@ void DChunk::process() {
 
 }
 
-std::optional<std::string> DChunk::update() {
+asio::awaitable<std::optional<std::string>> DChunk::update() {
 
-    uploadParts();
-    
+    co_await uploadParts();
+
 }

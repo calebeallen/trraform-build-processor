@@ -13,6 +13,7 @@
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/core/utils/memory/stl/AWSStreamFwd.h> 
 #include <opencv2/core.hpp>
+#include <boost/asio/awaitable.hpp>
 
 #include "config/config.hpp"
 #include "chunk/chunk_data.hpp"
@@ -137,21 +138,17 @@ const std::tuple<int,int> ChunkData::parseChunkIdStr(const std::string& id){
 
 }
 
-ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate) {
+ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate, std::shared_ptr<CFAsyncClient> cfCli) {
     _chunkId = chunkId;
     _needsUpdate = std::move(needsUpdate);
+    _cfCli = cfCli;
 };
 
-void ChunkData::downloadParts() {
+asio::awaitable<void> ChunkData::downloadParts() {
 
-    // get chunk from cf
-    Aws::S3::Model::GetObjectRequest req;
-    req.SetBucket(VARS::CF_CHUNKS_BUCKET);
-    req.SetKey(_chunkId);
-
-    auto res = CFUtils::r2Cli->GetObject(req);
+    auto res = co_await _cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId);
     if (!res.IsSuccess()) 
-        return;
+        co_return;
 
     auto& body = res.GetResult().GetBody();
     std::vector<uint8_t> data(
@@ -190,7 +187,7 @@ void ChunkData::downloadParts() {
 
 }
 
-void ChunkData::uploadParts(){
+asio::awaitable<void> ChunkData::uploadParts(){
 
     // encode parts
     size_t dataSize = 0;
@@ -220,20 +217,9 @@ void ChunkData::uploadParts(){
         i += partLen;
 
     }
-    
-    // upload to cf
-    auto stream = Aws::MakeShared<Aws::StringStream>("PutObjectInputStream");
-    stream->write(reinterpret_cast<const char*>(data.data()), data.size());
 
-    Aws::S3::Model::PutObjectRequest req;
-    req.SetBucket(VARS::CF_CHUNKS_BUCKET);
-    req.SetKey(_chunkId);
-    req.SetBody(stream);
-    req.SetContentLength(static_cast<long long>(data.size()));
-    req.SetContentType("application/octet-stream"); 
-
-    auto res = CFUtils::r2Cli->PutObject(req);
-    if (!res.IsSuccess())
+    auto res = co_await _cfCli->putR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId, "application/octet-stream", data);
+    if (!res.IsSuccess()) 
         throw std::runtime_error("R2 PutObject failed: " + res.GetError().GetMessage());
 
 }

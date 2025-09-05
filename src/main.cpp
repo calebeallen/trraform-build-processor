@@ -117,7 +117,7 @@ asio::awaitable<void> processChunk(
         chunk = std::make_unique<LChunk>(chunkId, needsUpdate);
 
     // pipeline
-    chunk->prep();
+    co_await chunk->prep();
 
     // process chunk on thread pool
     co_await asio::co_spawn(pool.get_executor(), [&chunk]() -> asio::awaitable<void> {
@@ -125,7 +125,7 @@ asio::awaitable<void> processChunk(
         co_return;
     }, asio::use_awaitable);
 
-    const auto nextChunkId = chunk->update();
+    const auto nextChunkId = co_await chunk->update();
     if (nextChunkId) {
         int nextLayer = std::get<0>(ChunkData::parseChunkIdStr(*nextChunkId));
         static const std::string script = R"(
@@ -162,28 +162,28 @@ asio::awaitable<void> processChunk(
 
 int main() {
 
-    const auto NUM_CORES = std::thread::hardware_concurrency();
-    const auto IO_POOL_SIZE = NUM_CORES;
-    const auto CPU_POOL_SIZE = std::max(1u, NUM_CORES - 1);
+    // const auto NUM_CORES = std::thread::hardware_concurrency();
+    // const auto IO_POOL_SIZE = NUM_CORES;
+    // const auto CPU_POOL_SIZE = std::max(1u, NUM_CORES - 1);
 
-    sw::redis::ConnectionOptions redisOpts;
-    redisOpts.host = "my-redis.example.com";
-    redisOpts.port = 6379;                                
-    redisOpts.user = "default";                            
-    redisOpts.password = "super-secret";                   
-    redisOpts.db = 0;                                      
-    redisOpts.socket_timeout = std::chrono::milliseconds(200);
-    redisOpts.connect_timeout = std::chrono::milliseconds(500);
-    redisOpts.keep_alive = true;    
+    // sw::redis::ConnectionOptions redisOpts;
+    // redisOpts.host = "my-redis.example.com";
+    // redisOpts.port = 6379;                                
+    // redisOpts.user = "default";                            
+    // redisOpts.password = "super-secret";                   
+    // redisOpts.db = 0;                                      
+    // redisOpts.socket_timeout = std::chrono::milliseconds(200);
+    // redisOpts.connect_timeout = std::chrono::milliseconds(500);
+    // redisOpts.keep_alive = true;    
     
-    sw::redis::ConnectionPoolOptions redisPoolOpts;
-    redisPoolOpts.size = IO_POOL_SIZE;
-    redisPoolOpts.wait_timeout = std::chrono::milliseconds(50);
+    // sw::redis::ConnectionPoolOptions redisPoolOpts;
+    // redisPoolOpts.size = IO_POOL_SIZE;
+    // redisPoolOpts.wait_timeout = std::chrono::milliseconds(50);
 
-    sw::redis::Redis redisCli(redisOpts, redisPoolOpts);
+    // sw::redis::Redis redisCli(redisOpts, redisPoolOpts);
 
    
-    ThreadPool cpuPool(CPU_POOL_SIZE);
+    // ThreadPool cpuPool(CPU_POOL_SIZE);
     
 
     return 0;

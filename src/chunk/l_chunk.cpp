@@ -3,14 +3,20 @@
 #include <format>
 #include <string>
 
+#include <boost/asio/awaitable.hpp>
+
 #include "config/config.hpp"
 #include "chunk/l_chunk.hpp"
 
-LChunk::LChunk(std::string chunkId, std::vector<std::uint64_t> needsUpdate) : ChunkData(chunkId, std::move(needsUpdate)) {}
+LChunk::LChunk(
+    std::string chunkId, 
+    std::vector<std::uint64_t> needsUpdate, 
+    std::shared_ptr<CFAsyncClient> cfCli
+) : ChunkData(chunkId, std::move(needsUpdate), cfCli) {}
 
-void LChunk::prep(){
+asio::awaitable<void> LChunk::prep(){
 
-    downloadParts();
+    co_await downloadParts();
 
     // get child ids of vector
     auto idParts = parseChunkIdStr(_chunkId);

@@ -4,6 +4,7 @@
 #include <string>
 
 #include <opencv2/core.hpp>
+#include <boost/asio/awaitable.hpp>
 
 #include "chunk/chunk_data.hpp"
 
@@ -13,10 +14,10 @@ private:
     std::unordered_map<int,cv::Mat> _pointClouds;
 
 public:
-    LChunk(std::string, std::vector<std::uint64_t>);
+    LChunk(std::string, std::vector<std::uint64_t>, std::shared_ptr<CFAsyncClient>);
 
-    void prep() override;
+    boost::asio::awaitable<void> prep() override;
     void process() override;
-    std::optional<std::string> update() override;
+    boost::asio::awaitable<std::optional<std::string>> update() override;
 
 };

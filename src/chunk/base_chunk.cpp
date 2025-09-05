@@ -6,25 +6,32 @@
 
 #include <opencv2/core.hpp>
 #include <cpr/cpr.h>
+#include <boost/asio/awaitable.hpp>
 
 #include "chunk/base_chunk.hpp"
 #include "config/config.hpp"
 #include "utils/color_lib.hpp"
 #include "utils/utils.hpp"
 #include "utils/plot.hpp"
+#include "utils/cf_async_client.hpp"
 
-BaseChunk::BaseChunk(std::string chunkId, std::vector<std::uint64_t> needsUpdate, std::vector<UpdateFlags> updateFlags) : DChunk(chunkId, std::move(needsUpdate), std::move(updateFlags)) {}
+BaseChunk::BaseChunk(
+    std::string chunkId, 
+    std::vector<std::uint64_t> needsUpdate, 
+    std::vector<UpdateFlags> updateFlags,
+    std::shared_ptr<CFAsyncClient> cfCli
+) : DChunk(chunkId, std::move(needsUpdate), std::move(updateFlags), cfCli) {}
 
-void BaseChunk::prep() {
+asio::awaitable<void> BaseChunk::prep() {
 
-    downloadParts();
-    downloadPlotUpdates();
+    co_await downloadParts();
+    co_await downloadPlotUpdates();
 
 }
 
-std::optional<std::string> BaseChunk::update() {
+asio::awaitable<std::optional<std::string>> BaseChunk::update() {
 
-    uploadParts();
+    co_await uploadParts();
 
     // sample points for parent chunk to use
     cv::RNG rng;
@@ -79,7 +86,7 @@ std::optional<std::string> BaseChunk::update() {
     const std::string fname = "/point_clouds/" + _chunkId + ".dat";
     std::ofstream file(fname, std::ios::binary);  
     if (!file.is_open()) {
-        return;
+        co_return nullptr;
     }
 
     int rows = pointCloud.rows;
@@ -93,6 +100,6 @@ std::optional<std::string> BaseChunk::update() {
     const auto nextLocId = getMappedBwd(1, locId);
     const auto nextChunkId = makeChunkIdStr(1, nextLocId, true);
 
-    return nextChunkId;
+    co_return nextChunkId;
 
 }
