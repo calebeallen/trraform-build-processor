@@ -16,7 +16,6 @@
 #include <boost/redis/request.hpp>
 #include <boost/redis/adapter/adapt.hpp>
 
-#include "thread_pool/thread_pool.hpp"
 #include "chunk/chunk_data.hpp"
 #include "config/config.hpp"
 #include "chunk/chunk_data.hpp"

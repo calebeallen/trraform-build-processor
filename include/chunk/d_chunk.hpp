@@ -21,7 +21,9 @@ typedef struct {
 class DChunk : public ChunkData {
 
 protected:
-    std::unordered_map<uint64_t,std::vector<std::uint8_t>> _updatedImages;
+    std::vector<std::string> _updatedImagesKeys;
+    std::vector<std::vector<std::uint8_t>> _updatedImages;
+
     std::vector<UpdateFlags> _updateFlags;
    
     asio::awaitable<void> downloadPlotUpdates();

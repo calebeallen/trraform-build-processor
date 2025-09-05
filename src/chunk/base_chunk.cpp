@@ -32,6 +32,7 @@ asio::awaitable<void> BaseChunk::prep() {
 asio::awaitable<std::optional<std::string>> BaseChunk::update() {
 
     co_await uploadParts();
+    co_await uploadImages();
 
     // sample points for parent chunk to use
     cv::RNG rng;

@@ -19,6 +19,32 @@
 #include "utils/cf_async_client.hpp"
 #include "config/config.hpp"
 
+CFAsyncClient::CFAsyncClient(
+    const std::string& r2EndPoint,
+    const std::string& r2AccessKey,
+    const std::string& r2SecretKey
+) {
+    Aws::InitAPI(_s3CliOpts);
+
+    Aws::Client::ClientConfiguration config;
+    config.region = "auto";
+    config.endpointOverride = r2EndPoint;
+    config.scheme = Aws::Http::Scheme::HTTPS;
+
+    Aws::Auth::AWSCredentials creds(r2AccessKey, r2SecretKey);
+
+    _s3Cli = std::make_shared<Aws::S3::S3Client>(
+        creds,
+        config,
+        Aws::Client::AWSAuthV4Signer::PayloadSigningPolicy::Never,
+        false
+    );
+}
+
+CFAsyncClient::~CFAsyncClient() {
+    Aws::ShutdownAPI(_s3CliOpts);
+}
+
 asio::awaitable<Aws::S3::Model::GetObjectOutcome> CFAsyncClient::getR2Object(
     const std::string& bucket, 
     const std::string& key

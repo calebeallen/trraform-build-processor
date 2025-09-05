@@ -110,10 +110,12 @@ asio::awaitable<void> DChunk::downloadPlotUpdates() {
 
 asio::awaitable<void> DChunk::uploadImages() {
 
-    // co_await _cfCli->putManyR2Objects(
-    //     VARS::CF_IMAGES_BUCKET,
-        
-    // );
+    co_await _cfCli->putManyR2Objects(
+        VARS::CF_IMAGES_BUCKET,
+        _updatedImagesKeys,
+        "image/png",
+        _updatedImages
+    );
 
 };
 
@@ -131,7 +133,8 @@ void DChunk::process() {
         const auto plotId = _needsUpdate[i];
         if (!_updateFlags[i].noImageUpdate) {
             const auto buildData = Plot::getBuildPart(_parts[plotId]);
-            _updatedImages[plotId] = BuildImage::make(buildData);
+            _updatedImagesKeys.push_back(std::format("{:X}.png", plotId));
+            _updatedImages.push_back(BuildImage::make(buildData));
         }
     }
 
@@ -140,5 +143,6 @@ void DChunk::process() {
 asio::awaitable<std::optional<std::string>> DChunk::update() {
 
     co_await uploadParts();
+    co_await uploadImages();
 
 }
