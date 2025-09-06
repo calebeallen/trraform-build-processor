@@ -2,8 +2,11 @@
 #include <algorithm>
 #include <format>
 #include <string>
+#include <iostream>
 
+#include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/stream_file.hpp>
 
 #include "config/config.hpp"
 #include "chunk/l_chunk.hpp"
@@ -24,23 +27,32 @@ asio::awaitable<void> LChunk::prep(){
     auto locId = std::get<1>(idParts);
     const std::vector<int>& childLocIds = getMappedFwd(layer, locId);
 
-    // load point clouds for each child from fs
-    for(int chli: childLocIds){
-        const std::string childId(makeChunkIdStr(layer, chli, true));
-        const std::string fname = "/point_clouds/" + childId + ".dat";
-        std::ifstream file(fname, std::ios::binary);
-        if (!file.is_open()) //files may not exist
+    std::vector<std::string> keys;
+    keys.reserve(childLocIds.size());
+    for (const auto cid : childLocIds)
+        keys.push_back(makeChunkIdStr(layer + 1, cid, true));
+
+    const auto res = co_await _cfCli->getManyR2Objects(VARS::CF_POINT_CLOUDS_BUCKET, keys);
+
+    for (size_t i = 0; i < childLocIds.size(); ++i) {
+        const auto& out = res[i];
+        const auto childId = childLocIds[i];
+
+        if (!out.IsSuccess())
             continue;
 
-        int rows;
-        file.read(reinterpret_cast<char*>(&rows), sizeof(int));
+        auto& body = out.GetResult().GetBody();
+        
+        // read rows header 4 bytes
+        std::uint32_t rows;
+        body.read(reinterpret_cast<char*>(&rows), sizeof(std::uint32_t));
 
-        cv::Mat pointCloud(rows, 6, CV_32FC1);
+        // create matrix
+        cv::Mat pointCloud(rows, 6, CV_32F);
         size_t size = pointCloud.total() * pointCloud.elemSize();
-        file.read(reinterpret_cast<char*>(pointCloud.data), size);
-        file.close();
+        body.read(reinterpret_cast<char*>(pointCloud.data), size);
 
-        _pointClouds[chli] = std::move(pointCloud);
+        _pointClouds[childId] = std::move(pointCloud);
     }
 
 }
@@ -161,17 +173,18 @@ asio::awaitable<std::optional<std::string>> LChunk::update() {
 
     cv::Mat pointCloud;
     cv::vconcat(samples, pointCloud);
- 
-    const std::string fname = "/point_clouds/" + _chunkId + ".dat";
-    std::ofstream file(fname, std::ios::binary);  
-    if (!file.is_open())
-        co_return nullptr;
 
-    int rows = pointCloud.rows;
-    file.write(reinterpret_cast<const char*>(&rows), sizeof(int));
+    const size_t headerSize = sizeof(std::uint32_t);
+    std::vector<std::uint8_t> data(headerSize + pointCloud.rows * sizeof(float));
+    std::memcpy(data.data(), &pointCloud.rows, headerSize); // copy header
+    std::copy(pointCloud.datastart, pointCloud.dataend, data.begin() + sizeof(std::uint32_t)); // copy matrix data
 
-    size_t dataSize = pointCloud.total() * pointCloud.elemSize();
-    file.write(reinterpret_cast<const char*>(pointCloud.data), dataSize);
+    co_await _cfCli->putR2Object(
+        VARS::CF_POINT_CLOUDS_BUCKET,
+        _chunkId + ".dat",
+        "application/octet-stream",
+        data
+    );
 
     // create parent chunk id for update
     const int nextLocId = getMappedBwd(layer - 1, std::get<1>(splitId));
