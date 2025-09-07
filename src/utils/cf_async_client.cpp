@@ -22,8 +22,11 @@
 CFAsyncClient::CFAsyncClient(
     const std::string& r2EndPoint,
     const std::string& r2AccessKey,
-    const std::string& r2SecretKey
+    const std::string& r2SecretKey,
+    const std::string& apiToken
 ) {
+    _apiToken = apiToken;
+
     Aws::InitAPI(_s3CliOpts);
 
     Aws::Client::ClientConfiguration config;
@@ -221,7 +224,7 @@ void CFAsyncClient::purgeCache(const std::vector<std::string>& urls) const {
     cpr::Response r = cpr::Post(
         cpr::Url{apiUrl},
         cpr::Header{
-            {"Authorization", "Bearer " + ENV::CF_API_TOKEN},
+            {"Authorization", "Bearer " + _apiToken},
             {"Content-Type", "application/json"}
         },
         cpr::Body{payload.dump()}

@@ -4,6 +4,8 @@
 
 namespace VARS {
 
+    inline constexpr int MAX_INFLIGHT = 20;
+
     inline constexpr int KMEANS_MAX_CLUSTERS = 5;
     inline constexpr int KMEANS_MAX_ITERS = 5;
 
@@ -32,11 +34,5 @@ namespace VARS {
     inline const std::string REDIS_FLAG_SET_DEFAULT_PLOT = "sdp";
     inline const std::string REDIS_FLAG_SET_DEFAULT_BUILD = "sdb";
     inline const std::string REDIS_FLAG_NO_IMAGE_UPDATE = "niu";
-
-}
-
-namespace ENV {
-
-    inline std::string CF_API_TOKEN;
 
 }

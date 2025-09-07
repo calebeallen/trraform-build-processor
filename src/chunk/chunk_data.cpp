@@ -17,7 +17,6 @@
 
 #include "config/config.hpp"
 #include "chunk/chunk_data.hpp"
-#include "utils/cf_utils.hpp"
 
 const int ChunkData::getMappedBwd(const int layer, const int locId){
 

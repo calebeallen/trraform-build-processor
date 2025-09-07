@@ -18,9 +18,10 @@ class CFAsyncClient {
 private:
     std::shared_ptr<Aws::S3::S3Client> _s3Cli;
     Aws::SDKOptions _s3CliOpts;
+    std::string _apiToken;
 
 public:
-    CFAsyncClient(const std::string&, const std::string&, const std::string&);
+    CFAsyncClient(const std::string&, const std::string&, const std::string&, const std::string&);
     ~CFAsyncClient();
     
     asio::awaitable<Aws::S3::Model::GetObjectOutcome> getR2Object(const std::string&, const std::string&) const;

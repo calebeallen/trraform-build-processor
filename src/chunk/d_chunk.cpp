@@ -14,7 +14,6 @@
 
 #include "chunk/d_chunk.hpp"
 #include "config/config.hpp"
-#include "utils/cf_utils.hpp"
 #include "utils/build_image.hpp"
 #include "utils/plot.hpp"
 #include "utils/cf_async_client.hpp"
