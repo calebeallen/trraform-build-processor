@@ -16,7 +16,6 @@ namespace asio = boost::asio;
 class ChunkData {
 
 protected:
-
     std::unordered_map<uint64_t,std::vector<uint8_t>> _parts; 
     std::vector<std::uint64_t> _needsUpdate;
     std::string _chunkId;
