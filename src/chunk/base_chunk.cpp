@@ -3,6 +3,7 @@
 #include <utility>
 #include <tuple>
 #include <fstream>
+#include <random>
 
 #include <opencv2/core.hpp>
 #include <cpr/cpr.h>
@@ -14,6 +15,7 @@
 #include "utils/utils.hpp"
 #include "utils/plot.hpp"
 #include "utils/cf_async_client.hpp"
+
 
 BaseChunk::BaseChunk(
     std::string chunkId, 
@@ -35,7 +37,7 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update() {
     co_await uploadImages();
 
     // sample points for parent chunk to use
-    cv::RNG rng;
+    std::mt19937 rng{std::random_device{}()};
     std::vector<cv::Mat> points;
 
     for (auto& [plotId, part] : _parts) {

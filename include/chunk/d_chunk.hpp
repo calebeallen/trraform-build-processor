@@ -11,12 +11,12 @@
 #include "chunk/chunk_data.hpp"
 #include "utils/cf_async_client.hpp"
 
-typedef struct {
+struct UpdateFlags {
     bool updateMetadataFieldsOnly = false;
     bool setDefaultPlot = false;
     bool setDefaultBuild = false;
     bool noImageUpdate = false;
-} UpdateFlags;
+};
 
 class DChunk : public ChunkData {
 

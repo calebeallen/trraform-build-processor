@@ -96,7 +96,7 @@ asio::awaitable<void> DChunk::downloadPlotUpdates() {
         }
 
         // set external fields
-        for (const auto [k,v] : extJsonFields.items())
+        for (const auto& [k,v] : extJsonFields.items())
             json[k] = v;
 
         // repack plot data

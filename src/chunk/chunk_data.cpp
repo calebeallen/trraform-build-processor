@@ -18,7 +18,7 @@
 #include "config/config.hpp"
 #include "chunk/chunk_data.hpp"
 
-const int ChunkData::getMappedBwd(const int layer, const int locId){
+int ChunkData::getMappedBwd(const int layer, const int locId){
 
     if(layer == 0)
         return 0;
@@ -164,15 +164,11 @@ asio::awaitable<void> ChunkData::downloadParts() {
         // read key (64 bit int little endian)
         std::uint64_t key;
         std::memcpy(&key, &data[i], sizeof(std::uint64_t));
-        if constexpr (std::endian::native == std::endian::big)
-            key = std::byteswap(key);
         i += 8;
 
         // read part len metadata (32 bit int little endian)
         std::uint32_t partLen;
         std::memcpy(&partLen, &data[i], sizeof(std::uint32_t));
-        if constexpr (std::endian::native == std::endian::big)
-            partLen = std::byteswap(partLen);
         i += 4;
 
         if (i + partLen > n)
@@ -199,15 +195,11 @@ asio::awaitable<void> ChunkData::uploadParts(){
 
         // set key
         uint64_t k = key;
-        if constexpr (std::endian::native == std::endian::big)
-            k = std::byteswap(k);
         std::memcpy(&data[i], &k, sizeof(uint64_t));
         i += 8;
 
         // set part len metadata
         uint32_t partLen = part.size();
-        if constexpr (std::endian::native == std::endian::big)
-            partLen = std::byteswap(partLen);
         std::memcpy(&data[i], &partLen, sizeof(uint32_t));
         i += 4;
 

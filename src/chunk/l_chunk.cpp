@@ -3,6 +3,7 @@
 #include <format>
 #include <string>
 #include <iostream>
+#include <random>
 
 #include <boost/asio.hpp>
 #include <boost/asio/awaitable.hpp>
@@ -153,11 +154,10 @@ asio::awaitable<std::optional<std::string>> LChunk::update() {
 
     // sample points for parent chunk to use
     std::vector<cv::Mat> samples;
-    cv::RNG rng;
+    std::mt19937 rng{std::random_device{}()};
 
     for(const auto& [_, mat] : _pointClouds){
         int n = mat.rows;
-        int nf = (float)(mat.rows);
 
         int sampleCount = std::max(1, (int)(n * VARS::PC_SAMPLE_PERC));
 

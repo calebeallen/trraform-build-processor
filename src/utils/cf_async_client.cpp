@@ -13,6 +13,10 @@
 #include <boost/asio/detached.hpp>
 #include <cpr/cpr.h>
 #include <aws/core/Aws.h>
+#include <aws/s3/model/GetObjectRequest.h>
+#include <aws/s3/model/PutObjectRequest.h>
+#include <aws/s3/model/GetObjectResult.h>
+#include <aws/s3/model/PutObjectResult.h>
 #include <aws/s3/S3Client.h>
 #include <nlohmann/json.hpp>
 
@@ -69,7 +73,7 @@ asio::awaitable<Aws::S3::Model::GetObjectOutcome> CFAsyncClient::getR2Object(
                     const Aws::S3::Model::GetObjectOutcome& o,
                     const std::shared_ptr<const Aws::Client::AsyncCallerContext>&
                 ) mutable {
-                    Aws::S3::Model::PutObjectOutcome out = o;
+                    Aws::S3::Model::GetObjectOutcome out = o;
                     asio::post(
                         exe, 
                         [handler = std::move(handler), out = std::move(out)]() mutable { 

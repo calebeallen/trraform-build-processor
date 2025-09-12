@@ -8,7 +8,6 @@
 
 #include <boost/asio/awaitable.hpp>
 
-#include "chunk/d_chunk.hpp"
 #include "utils/cf_async_client.hpp"
 
 namespace asio = boost::asio;
@@ -26,7 +25,7 @@ protected:
 
 public:
     static const std::vector<int>& getMappedFwd(const int, const int);
-    static const int getMappedBwd(const int, const int);
+    static int getMappedBwd(const int, const int);
     static std::string makeChunkIdStr(const int, const int, const bool);
     static const std::tuple<int,int> parseChunkIdStr(const std::string&);
 

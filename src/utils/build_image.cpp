@@ -88,6 +88,15 @@ static void rasterize(
     }
 }
 
+static void vmin(cv::Vec4f& a, const cv::Vec4f& b) {
+    for (int i = 0; i < 4; ++i) 
+        a[i] = std::min(a[i], b[i]);
+}
+
+static void vmax(cv::Vec4f& a, const cv::Vec4f& b) {
+    for (int i = 0; i < 4; ++i) 
+        a[i] = std::max(a[i], b[i]);
+}
 
 // light-weight renderer
 std::vector<std::uint8_t> BuildImage::make(const std::vector<std::uint16_t>& buildData) {
@@ -110,8 +119,8 @@ std::vector<std::uint8_t> BuildImage::make(const std::vector<std::uint16_t>& bui
             col = ColorLib::getColorAsVec(buildData[i] >> 1);
             if (col) {
                 cv::Vec4f u(Utils::idxToVec4(idx, bs));
-                min = cv::min(min, u);
-                max = cv::max(max, u);
+                vmin(min, u);
+                vmax(max, u);
                 points.push_back(u);
                 colors.push_back(*col);
             }
@@ -121,8 +130,8 @@ std::vector<std::uint8_t> BuildImage::make(const std::vector<std::uint16_t>& bui
             if (col) {
                 for(int j = 0; j < repeat; ++j){
                     cv::Vec4f u(Utils::idxToVec4(idx + j, bs));
-                    min = cv::min(min, u);
-                    max = cv::max(max, u);
+                    vmin(min, u);
+                    vmax(max, u);
                     points.push_back(u); 
                     colors.push_back(*col);
                 }
