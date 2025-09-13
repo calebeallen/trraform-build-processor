@@ -45,7 +45,7 @@ asio::awaitable<void> DChunk::downloadPlotUpdates() {
     for (size_t i = 0; i < updates.size(); ++i) {
         const std::uint64_t plotId = _needsUpdate[i];
         const auto& flags = _updateFlags[i];
-        auto r = updates[i];
+        auto& r = updates[i];
 
         if (!r.IsSuccess()) 
             continue;
@@ -143,5 +143,6 @@ asio::awaitable<std::optional<std::string>> DChunk::update() {
 
     co_await uploadParts();
     co_await uploadImages();
+    co_return std::nullopt;
 
 }

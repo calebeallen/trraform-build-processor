@@ -63,7 +63,7 @@ void LChunk::process(){
     // compute low-resolution representations of the chunk
     for (const auto& locId : _needsUpdate) {
         cv::Mat& points = _pointClouds[locId];
-        const int n = points.rows;
+        const size_t n = points.rows;
 
         if(n < 2)
             continue;
@@ -85,9 +85,9 @@ void LChunk::process(){
         }
 
         // compute number of boxes
-        double kLin = std::min(n / std::pow(VARS::BUILD_SIZE_STD, 3), 1.0);
-        int k = int((1 - std::pow(kLin - 1, 6)) * VARS::KMEANS_MAX_CLUSTERS);
-        k = std::clamp(k, 1, n);
+        double kLin = std::min(static_cast<double>(n) / static_cast<double>(std::pow(VARS::BUILD_SIZE_STD, 3)), 1.0);
+        size_t k = static_cast<size_t>((1.0 - std::pow(kLin - 1.0, 6)) * VARS::KMEANS_MAX_CLUSTERS);
+        k = std::clamp(k, 1ul, n);
 
         cv::Mat labels, centers;
         cv::kmeans(
@@ -102,8 +102,8 @@ void LChunk::process(){
         // compute bounding boxes, encode into uint8 buffer
         std::vector<cv::Vec3f> mean(k, {0,0,0}), m2(k, {0,0,0}), color(k, {0,0,0});
         std::vector<int> count(k, 0);
-        for (int i = 0; i < n; ++i) {
-            size_t cl = labels.at<int>(i);
+        for (size_t i = 0; i < n; ++i) {
+            size_t cl = labels.at<size_t>(i);
             const float* p = points.ptr<float>(i);
             ++count[cl];
 
@@ -125,7 +125,7 @@ void LChunk::process(){
                 continue;
 
             cv::Vec3f stddev;
-            for (int c = 0; c < 3; ++c)
+            for (size_t c = 0; c < 3; ++c)
                 stddev[c] = clusterSize > 1 ? std::sqrt(m2[i][c] / (clusterSize - 1)) : 0.0f;
 
             float arr[9]{
@@ -150,24 +150,23 @@ asio::awaitable<std::optional<std::string>> LChunk::update() {
     const auto splitId = ChunkData::parseChunkIdStr(_chunkId);
     int layer = std::get<0>(splitId);
     if (layer == 0)
-        co_return nullptr;
+        co_return std::nullopt;
 
     // sample points for parent chunk to use
     std::vector<cv::Mat> samples;
     std::mt19937 rng{std::random_device{}()};
 
     for(const auto& [_, mat] : _pointClouds){
-        int n = mat.rows;
+        size_t n = mat.rows;
+        size_t sampleCount = std::max(1ul, static_cast<size_t>(n * VARS::PC_SAMPLE_PERC));
 
-        int sampleCount = std::max(1, (int)(n * VARS::PC_SAMPLE_PERC));
-
-        std::vector<int> idxs(n);
-        for (int i = 0; i < n; ++i)
+        std::vector<size_t> idxs(n);
+        for (size_t i = 0; i < n; ++i)
             idxs[i] = i;
 
         std::shuffle(idxs.begin(), idxs.end(), rng);
 
-        for (int i = 0; i < sampleCount; ++i)
+        for (size_t i = 0; i < sampleCount; ++i)
             samples.push_back(mat.row(idxs[i]));
     }
 

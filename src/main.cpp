@@ -35,8 +35,8 @@ class InFlightGuard {
 private:
     std::shared_ptr<int> _if;
 public:
-    InFlightGuard(std::shared_ptr<int> _if) : _if(_if) { ++*_if; }
-    ~InFlightGuard() { --*_if; }
+    InFlightGuard(std::shared_ptr<int> _if) : _if(_if) { ++(*_if); }
+    ~InFlightGuard() { --(*_if); }
 };
 
 asio::awaitable<void> processChunk(
@@ -63,22 +63,22 @@ asio::awaitable<void> processChunk(
                 local needsUpdate = redis.call('SMEMBERS', set_key)
                 redis.call('DEL', set_key)
                 
-                return {chunkId, needsUpdate}
+                return {chunkId, unpack(needsUpdate)}
             )";
             redis::request req;
-            redis::response<std::optional<std::tuple<std::string, std::vector<std::string>>>> res;
+            redis::response<std::optional<std::vector<std::string>>> res;
             req.push("EVAL", script, "1", VARS::REDIS_UPDATE_QUEUE_PREFIX, VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX);
             co_await redisCli.async_exec(req, res, asio::use_awaitable);
-            const auto result = std::get<0>(res).value();
-            if (!result)
+            const auto& optRes = std::get<0>(res).value();
+            if (!optRes)
                 co_return;
 
-            chunkId = std::get<0>(*result);
-            needsUpdateStrs = std::get<1>(*result);
+            const std::vector<std::string>& result = *optRes;
+            chunkId = result[0];
 
-            needsUpdate.reserve(needsUpdateStrs.size());
-            for(const auto& idStr : needsUpdateStrs)
-                needsUpdate.push_back(std::stoll(idStr, nullptr, 16));
+            needsUpdate.reserve(result.size() - 1);
+            for(size_t i = 1; i < result.size(); ++i)
+                needsUpdate.push_back(std::stoll(result[i-1], nullptr, 16));
         }
 
         const auto chunkIdParts = ChunkData::parseChunkIdStr(chunkId);
@@ -159,7 +159,7 @@ asio::awaitable<void> processChunk(
                 "EVAL", 
                 script, 
                 "0", 
-                nextChunkId,
+                *nextChunkId,
                 chunkId,
                 VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX,
                 VARS::REDIS_UPDATE_QUEUE_PREFIX

@@ -65,19 +65,25 @@ asio::awaitable<Aws::S3::Model::GetObjectOutcome> CFAsyncClient::getR2Object(
 
             auto exe = asio::get_associated_executor(handler);
 
+            // handler is non-copyable, make shared ptr so that lambda capture can be copied
+            using HandlerT = std::decay_t<decltype(handler)>;
+            std::shared_ptr<HandlerT> hptr = std::make_shared<HandlerT>(std::move(handler));
+
             _s3Cli->GetObjectAsync(
                 req,
-                [handler = std::move(handler), exe](
+                [hptr, exe](
                     const Aws::S3::S3Client*,
                     const Aws::S3::Model::GetObjectRequest&,
-                    const Aws::S3::Model::GetObjectOutcome& o,
+                    const Aws::S3::Model::GetObjectOutcome& co,
                     const std::shared_ptr<const Aws::Client::AsyncCallerContext>&
                 ) mutable {
-                    Aws::S3::Model::GetObjectOutcome out = o;
+                    auto& nco = const_cast<Aws::S3::Model::GetObjectOutcome&>(co); // remove const to enable move
+                    Aws::S3::Model::GetObjectOutcome out = std::move(nco);
+                    
                     asio::post(
                         exe, 
-                        [handler = std::move(handler), out = std::move(out)]() mutable { 
-                            handler(std::move(out)); 
+                        [hptr, out = std::move(out)]() mutable { 
+                            (*hptr)(std::move(out)); 
                     });
                 }
             );
@@ -145,21 +151,28 @@ asio::awaitable<Aws::S3::Model::PutObjectOutcome> CFAsyncClient::putR2Object(
             req.SetBody(body);
             req.SetContentLength(static_cast<long long>(data.size()));
             req.SetContentType(contentType);
+
             auto exe = asio::get_associated_executor(handler);
+
+            // handler is non-copyable, make shared ptr so that lambda capture can be copied
+            using HandlerT = std::decay_t<decltype(handler)>;
+            std::shared_ptr<HandlerT> hptr = std::make_shared<HandlerT>(std::move(handler));
 
             _s3Cli->PutObjectAsync(
                 req,
-                [handler = std::move(handler), exe](
+                [hptr, exe](
                     const Aws::S3::S3Client*,
                     const Aws::S3::Model::PutObjectRequest&,
-                    const Aws::S3::Model::PutObjectOutcome& o,
+                    const Aws::S3::Model::PutObjectOutcome& co,
                     const std::shared_ptr<const Aws::Client::AsyncCallerContext>&
                 ) mutable {
-                    Aws::S3::Model::PutObjectOutcome out = o;
+                    auto& nco = const_cast<Aws::S3::Model::PutObjectOutcome&>(co); // remove const to enable move
+                    Aws::S3::Model::PutObjectOutcome out = std::move(nco);
+
                     asio::post(
                         exe, 
-                        [handler = std::move(handler), out = std::move(out)]() mutable { 
-                            handler(std::move(out)); 
+                        [hptr, out = std::move(out)]() mutable { 
+                            (*hptr)(std::move(out)); 
                     });
                 }
             );

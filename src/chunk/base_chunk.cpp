@@ -66,7 +66,7 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update() {
         if (!vox.size())
             continue;
             
-        int sampleCount = std::max(1, (int)(static_cast<float>(vox.size()) * VARS::PC_SAMPLE_PERC));
+        size_t sampleCount = std::max(1ul, (size_t)(static_cast<float>(vox.size()) * VARS::PC_SAMPLE_PERC));
         std::shuffle(vox.begin(), vox.end(), rng);
 
         int worldPosIdx = getMappedBwd(2, plotId);
@@ -89,7 +89,7 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update() {
     const std::string fname = "/point_clouds/" + _chunkId + ".dat";
     std::ofstream file(fname, std::ios::binary);  
     if (!file.is_open()) {
-        co_return nullptr;
+        co_return std::nullopt;
     }
 
     int rows = pointCloud.rows;
