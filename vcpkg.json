@@ -1,0 +1,16 @@
+{
+  "name": "trra-svr",
+  "version-string": "0.1.0",
+  "dependencies": [
+    { 
+      "name": "aws-sdk-cpp", 
+      "default-features": false, 
+      "features": ["s3"] 
+    },
+    "nlohmann-json",
+    "boost-redis",
+    "cpr",
+    "opencv",
+    "fmt"
+  ]
+}
