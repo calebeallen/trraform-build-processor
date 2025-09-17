@@ -145,41 +145,28 @@ ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate
 
 asio::awaitable<void> ChunkData::downloadParts() {
 
-    auto res = co_await _cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat");
-    if (!res.IsSuccess()) {
-        const auto& err = res.GetError();
-        if (err.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
-            co_return; 
-            
-        throw std::runtime_error("R2 GetObject failed: " + res.GetError().GetMessage());
+    auto obj = co_await _cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat");
+    if (obj.err) {
+        if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
+            throw std::runtime_error(obj.errMsg);
+        co_return;
     }
 
-    auto& body = res.GetResult().GetBody();
-    std::vector<uint8_t> data(
-        (std::istreambuf_iterator<char>(body)),
-        std::istreambuf_iterator<char>()
-    );
-
     // decode into parts
-    size_t i = 0, n = data.size();
+    size_t i = 0, n = obj.body.size();
     while (i < n) {
-        if (i + 12 > n)
-            throw std::runtime_error("Not enough bytes to read metadata");
 
         // read id (64 bit int little endian)
         std::uint64_t id;
-        std::memcpy(&id, &data[i], sizeof(std::uint64_t));
+        std::memcpy(&id, &obj.body[i], sizeof(std::uint64_t));
         i += 8;
 
         // read part len metadata (32 bit int little endian)
         std::uint32_t partLen;
-        std::memcpy(&partLen, &data[i], sizeof(std::uint32_t));
+        std::memcpy(&partLen, &obj.body[i], sizeof(std::uint32_t));
         i += 4;
 
-        if (i + partLen > n)
-            throw std::runtime_error("Not enough bytes to read value");
-
-        std::vector<uint8_t> part(data.begin() + i, data.begin() + i + partLen);
+        std::vector<std::uint8_t> part(obj.body.begin() + i, obj.body.begin() + i + partLen);
         i += partLen;
 
         _parts.emplace(id, std::move(part));
@@ -213,8 +200,8 @@ asio::awaitable<void> ChunkData::uploadParts(){
 
     }
 
-    auto res = co_await _cfCli->putR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat", "application/octet-stream", data);
-    if (!res.IsSuccess()) 
-        throw std::runtime_error("R2 PutObject failed: " + res.GetError().GetMessage());
+    auto out = co_await _cfCli->putR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat", "application/octet-stream", data);
+    if (out.err)
+        throw std::runtime_error(out.errMsg);
 
 }

@@ -35,96 +35,81 @@ DChunk::DChunk(
 asio::awaitable<void> DChunk::downloadPlotUpdates() {
 
     // pull updates
-    std::vector<std::string> needsUpdate(_needsUpdate.size());
+    std::vector<std::string> needsUpdateKeys(_needsUpdate.size());
     for(size_t i = 0; i < _needsUpdate.size(); ++i)
-        needsUpdate[i] = fmt::format("{}", _needsUpdate[i]);
+        needsUpdateKeys[i] = fmt::format("{:x}.dat", _needsUpdate[i]);
 
-    std::cout << "pulling updates" << std::endl;
-
-    auto updates = co_await _cfCli->getManyR2Objects(VARS::CF_PLOTS_BUCKET, needsUpdate);
-
-    std::cout << updates.size() << std::endl;
+    auto updates = co_await _cfCli->getManyR2Objects(VARS::CF_PLOTS_BUCKET, needsUpdateKeys);
 
     // set new plot data
     for (size_t i = 0; i < updates.size(); ++i) {
         const std::uint64_t plotId = _needsUpdate[i];
         const auto& flags = _updateFlags[i];
-        auto& r = updates[i];
+        auto& out = updates[i];
 
-        std::cout << "checking success" << std::endl;
-        if (!r.IsSuccess()) 
-            continue;
+        // file must exist here
+        if (out.err)
+            throw std::runtime_error(out.errMsg);
 
-        std::cout << "getting with ownership" << std::endl;
-
-        const auto& res = r.GetResultWithOwnership();
-
-        // read metadata
-        const auto& metaStream = res.GetMetadata();
-        std::cout << "done" << std::endl;
-        nlohmann::json extJsonFields;
-        bool verified;
-        if (auto it = metaStream.find("verified"); it != metaStream.end()) {
-            verified = it->second == "true";   
-            extJsonFields["verified"] = verified;
-        }
-        if (auto it = metaStream.find("owner"); it != metaStream.end()) {
-            extJsonFields["owner"] = it->second.c_str();
-        }
-        
         nlohmann::json json;
         std::span<const std::uint8_t> buildPart;
-    
-        if (flags.setDefaultPlot) {
+
+        /*
+        cases:
+            standard update: no flags
+            subscription created: no flags
+            subscription canceled: no flags
+            plot removed: default build and default json
+        */
+        if (flags.setDefaultJson) 
             json = Plot::getDefaultJsonPart();
+        else
+            json = Plot::getJsonPart(out.body);
+
+        if (flags.setDefaultBuild)
             buildPart = Plot::getDefaultBuildData();
-        } else {
-            // request new data if needed
-            if (!flags.updateMetadataFieldsOnly || !_parts.contains(plotId)) {
-                auto& body = res.GetBody();
-                _parts[plotId] = std::vector<uint8_t>{
-                    std::istreambuf_iterator<char>(body), 
-                    std::istreambuf_iterator<char>()
-                };
-            }
+        else
+            buildPart = Plot::getBuildData(out.body);
+        
+        // update metadata fields
+        if (out.metadata.find("verified") != out.metadata.end())
+            throw std::runtime_error("Plot missing verified metadata");
+        if (out.metadata.find("owner") != out.metadata.end())
+            throw std::runtime_error("Plot missing owner metadata");
 
-            // extract json part
-            json = Plot::getJsonPart(_parts[plotId]);
-            if (!verified) {
-                json["link"] = "";
-                json["linkTitle"] = "";
-            }
+        bool verified = out.metadata["verified"] == "true";
+        json["verified"] = verified;
+        json["owner"] = out.metadata["owner"];
 
-            // set default build on flag or build size violation
-            if (flags.setDefaultBuild || (!verified && Plot::getBuildSize(_parts[plotId]) > VARS::BUILD_SIZE_STD))
+        // remove subscriber fields
+        if (!verified) {
+            json["link"] = "";
+            json["linkTitle"] = "";
+            // if build data is greater than max size, remove build
+            if (Plot::getBuildSize(out.body) > VARS::BUILD_SIZE_STD)
                 buildPart = Plot::getDefaultBuildData();
-            else
-                buildPart = Plot::getBuildData(_parts[plotId]);
-            
         }
 
-        // set external fields
-        for (const auto& [k,v] : extJsonFields.items())
-            json[k] = v;
-
         // repack plot data
-        const std::vector<std::uint8_t> jsonData = nlohmann::json::to_cbor(json);
-        _parts[plotId] = Plot::makePlotData(jsonData, buildPart);
-
+        _parts[plotId] = Plot::makePlotData(json, buildPart);
     }
 
 }
 
 asio::awaitable<void> DChunk::uploadImages() {
 
-    co_await _cfCli->putManyR2Objects(
+    const auto results = co_await _cfCli->putManyR2Objects(
         VARS::CF_IMAGES_BUCKET,
         _updatedImagesKeys,
         "image/png",
         _updatedImages
     );
 
-};
+    for (const auto& res : results)
+        if (res.err)
+            throw std::runtime_error(res.errMsg);
+
+}
 
 asio::awaitable<void> DChunk::prep() {
 
@@ -140,8 +125,8 @@ void DChunk::process() {
         const auto plotId = _needsUpdate[i];
         if (!_updateFlags[i].noImageUpdate) {
             const auto buildData = Plot::getBuildPart(_parts[plotId]);
-            _updatedImagesKeys.push_back(fmt::format("{:X}.png", plotId));
-            _updatedImages.push_back(BuildImage::make(buildData));
+            _updatedImagesKeys.emplace_back(fmt::format("{:X}.png", plotId));
+            _updatedImages.emplace_back(BuildImage::make(buildData));
         }
     }
 

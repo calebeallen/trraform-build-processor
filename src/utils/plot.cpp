@@ -104,8 +104,9 @@ int Plot::getBuildSize(const std::vector<std::uint8_t>& plotData) {
 
 }
 
-std::vector<std::uint8_t> Plot::makePlotData(const std::span<const std::uint8_t>& jsonData, const std::span<const std::uint8_t>& buildData) {
+std::vector<std::uint8_t> Plot::makePlotData(const nlohmann::json& json, const std::span<const std::uint8_t>& buildData) {
 
+    const auto jsonData = nlohmann::json::to_cbor(json);
     const size_t jsonLen = jsonData.size();
     const size_t buildLen = buildData.size();
     std::vector<std::uint8_t> plotData(jsonLen + buildLen + 8);

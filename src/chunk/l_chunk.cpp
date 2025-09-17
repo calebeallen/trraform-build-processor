@@ -25,34 +25,32 @@ asio::awaitable<void> LChunk::prep(){
     auto idParts = parseChunkIdStr(_chunkId);
     auto layer = std::get<0>(idParts);
     auto locId = std::get<1>(idParts);
-    const std::vector<int>& childLocIds = getMappedFwd(layer, locId);
+    const std::vector<int>& childIds = getMappedFwd(layer, locId);
 
     std::vector<std::string> keys;
-    keys.reserve(childLocIds.size());
-    for (const auto cid : childLocIds)
-        keys.push_back(makeChunkIdStr(layer + 1, cid, true));
+    keys.reserve(childIds.size());
+    for (const auto cid : childIds)
+        keys.emplace_back(makeChunkIdStr(layer + 1, cid, true));
 
     const auto res = co_await _cfCli->getManyR2Objects(VARS::CF_POINT_CLOUDS_BUCKET, keys);
 
-    for (size_t i = 0; i < childLocIds.size(); ++i) {
+    for (size_t i = 0; i < childIds.size(); ++i) {
+        const auto id = childIds[i];
         const auto& out = res[i];
-        const auto childId = childLocIds[i];
 
-        if (!out.IsSuccess())
-            continue;
-
-        auto& body = out.GetResult().GetBody();
+        // object must exist
+        if (out.err)
+            throw std::runtime_error(out.errMsg);
         
         // read rows header 4 bytes
         std::uint32_t rows;
-        body.read(reinterpret_cast<char*>(&rows), sizeof(std::uint32_t));
+        std::memcpy(&rows, out.body.data(), sizeof(std::uint32_t));
 
         // create matrix
         cv::Mat pointCloud(rows, 6, CV_32F);
-        size_t size = pointCloud.total() * pointCloud.elemSize();
-        body.read(reinterpret_cast<char*>(pointCloud.data), size);
+        std::memcpy(pointCloud.data, out.body.data() + sizeof(std::uint32_t), pointCloud.total() * pointCloud.elemSize());
 
-        _pointClouds[childId] = std::move(pointCloud);
+        _pointClouds[id] = std::move(pointCloud);
     }
 
 }
@@ -172,17 +170,20 @@ asio::awaitable<std::optional<std::string>> LChunk::update() {
     cv::Mat pointCloud;
     cv::vconcat(samples, pointCloud);
 
-    const size_t headerSize = sizeof(std::uint32_t);
-    std::vector<std::uint8_t> data(headerSize + pointCloud.rows * sizeof(float));
-    std::memcpy(data.data(), &pointCloud.rows, headerSize); // copy header
-    std::copy(pointCloud.datastart, pointCloud.dataend, data.begin() + sizeof(std::uint32_t)); // copy matrix data
+    const std::uint32_t rows = pointCloud.rows;
+    const size_t size = pointCloud.total() * pointCloud.elemSize();
+    std::vector<std::uint8_t> data(sizeof(std::uint32_t) + size);
+    std::memcpy(data.data(), &rows, sizeof(std::uint32_t));
+    std::memcpy(data.data() + sizeof(std::uint32_t), pointCloud.data, size);
 
-    co_await _cfCli->putR2Object(
+    auto out = co_await _cfCli->putR2Object(
         VARS::CF_POINT_CLOUDS_BUCKET,
         _chunkId + ".dat",
         "application/octet-stream",
         data
     );
+    if (out.err)
+        throw std::runtime_error(out.errMsg);
 
     // create parent chunk id for update
     const int nextLocId = getMappedBwd(layer - 1, std::get<1>(splitId));

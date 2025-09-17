@@ -77,6 +77,9 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update() {
 
     cv::Mat pointCloud;
     cv::vconcat(points, pointCloud);
+
+    
+
  
     // write to file
     const std::string fname = "/point_clouds/" + _chunkId + ".dat";

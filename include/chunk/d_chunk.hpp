@@ -12,8 +12,7 @@
 #include "utils/cf_async_client.hpp"
 
 struct UpdateFlags {
-    bool updateMetadataFieldsOnly = false;
-    bool setDefaultPlot = false;
+    bool setDefaultJson = false;
     bool setDefaultBuild = false;
     bool noImageUpdate = false;
 };

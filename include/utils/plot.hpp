@@ -16,6 +16,6 @@ namespace Plot {
     std::vector<std::uint16_t> getBuildPart(const std::vector<std::uint8_t>&);
     int getBuildSize(const std::vector<std::uint8_t>&);
 
-    std::vector<std::uint8_t> makePlotData(const std::span<const std::uint8_t>&, const std::span<const std::uint8_t>&);
+    std::vector<std::uint8_t> makePlotData(const nlohmann::json&, const std::span<const std::uint8_t>&);
 
 }
