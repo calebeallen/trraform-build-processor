@@ -24,13 +24,6 @@ BaseChunk::BaseChunk(
     std::shared_ptr<CFAsyncClient> cfCli
 ) : DChunk(chunkId, std::move(needsUpdate), std::move(updateFlags), cfCli) {}
 
-asio::awaitable<void> BaseChunk::prep() {
-
-    co_await downloadParts();
-    co_await downloadPlotUpdates();
-
-}
-
 asio::awaitable<std::optional<std::string>> BaseChunk::update() {
 
     co_await uploadParts();

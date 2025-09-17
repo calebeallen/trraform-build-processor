@@ -39,7 +39,11 @@ asio::awaitable<void> DChunk::downloadPlotUpdates() {
     for(size_t i = 0; i < _needsUpdate.size(); ++i)
         needsUpdate[i] = fmt::format("{}", _needsUpdate[i]);
 
+    std::cout << "pulling updates" << std::endl;
+
     auto updates = co_await _cfCli->getManyR2Objects(VARS::CF_PLOTS_BUCKET, needsUpdate);
+
+    std::cout << updates.size() << std::endl;
 
     // set new plot data
     for (size_t i = 0; i < updates.size(); ++i) {
@@ -47,13 +51,17 @@ asio::awaitable<void> DChunk::downloadPlotUpdates() {
         const auto& flags = _updateFlags[i];
         auto& r = updates[i];
 
+        std::cout << "checking success" << std::endl;
         if (!r.IsSuccess()) 
             continue;
+
+        std::cout << "getting with ownership" << std::endl;
 
         const auto& res = r.GetResultWithOwnership();
 
         // read metadata
         const auto& metaStream = res.GetMetadata();
+        std::cout << "done" << std::endl;
         nlohmann::json extJsonFields;
         bool verified;
         if (auto it = metaStream.find("verified"); it != metaStream.end()) {

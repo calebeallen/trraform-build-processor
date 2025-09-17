@@ -152,10 +152,11 @@ asio::awaitable<void> processChunk(
             chunk = std::make_shared<LChunk>(chunkId, std::move(needsUpdate), cfCli);
 
 
-        co_return;
-
         // pipeline
         co_await chunk->prep();
+
+        
+        co_return;
 
         // process chunk on thread pool
         co_await asio::co_spawn(pool.get_executor(), [chunk]() -> asio::awaitable<void> {

@@ -145,9 +145,14 @@ ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate
 
 asio::awaitable<void> ChunkData::downloadParts() {
 
-    auto res = co_await _cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId);
-    if (!res.IsSuccess()) 
-        co_return;
+    auto res = co_await _cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat");
+    if (!res.IsSuccess()) {
+        const auto& err = res.GetError();
+        if (err.GetErrorType() == Aws::S3::S3Errors::NO_SUCH_KEY)
+            co_return; 
+            
+        throw std::runtime_error("R2 GetObject failed: " + res.GetError().GetMessage());
+    }
 
     auto& body = res.GetResult().GetBody();
     std::vector<uint8_t> data(
@@ -161,9 +166,9 @@ asio::awaitable<void> ChunkData::downloadParts() {
         if (i + 12 > n)
             throw std::runtime_error("Not enough bytes to read metadata");
 
-        // read key (64 bit int little endian)
-        std::uint64_t key;
-        std::memcpy(&key, &data[i], sizeof(std::uint64_t));
+        // read id (64 bit int little endian)
+        std::uint64_t id;
+        std::memcpy(&id, &data[i], sizeof(std::uint64_t));
         i += 8;
 
         // read part len metadata (32 bit int little endian)
@@ -177,7 +182,7 @@ asio::awaitable<void> ChunkData::downloadParts() {
         std::vector<uint8_t> part(data.begin() + i, data.begin() + i + partLen);
         i += partLen;
 
-        _parts[key] = std::move(part);
+        _parts.emplace(id, std::move(part));
     }
 
 }
@@ -185,17 +190,16 @@ asio::awaitable<void> ChunkData::downloadParts() {
 asio::awaitable<void> ChunkData::uploadParts(){
 
     // encode parts
-    size_t dataSize = 0;
+    size_t size = 0;
     for(auto& [key, part] : _parts)
-        dataSize += 12 + part.size();
+        size += 12 + part.size();
 
-    std::vector<uint8_t> data(dataSize);
+    std::vector<uint8_t> data(size);
     size_t i = 0;
-    for(auto& [key, part] : _parts){
+    for(auto& [id, part] : _parts){
 
-        // set key
-        uint64_t k = key;
-        std::memcpy(&data[i], &k, sizeof(uint64_t));
+        // set id
+        std::memcpy(&data[i], &id, sizeof(uint64_t));
         i += 8;
 
         // set part len metadata
@@ -209,7 +213,7 @@ asio::awaitable<void> ChunkData::uploadParts(){
 
     }
 
-    auto res = co_await _cfCli->putR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId, "application/octet-stream", data);
+    auto res = co_await _cfCli->putR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat", "application/octet-stream", data);
     if (!res.IsSuccess()) 
         throw std::runtime_error("R2 PutObject failed: " + res.GetError().GetMessage());
 
