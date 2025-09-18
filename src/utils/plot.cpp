@@ -43,9 +43,9 @@ nlohmann::json Plot::getDefaultJsonPart() {
 const std::span<const std::uint8_t> Plot::getDefaultBuildData() {
 
     static const auto defaultBuild = []() {
-        std::ifstream file("static/default_build.dat", std::ios::binary);
+        std::ifstream file("static/default_cactus.dat", std::ios::binary);
         if (!file) {
-            throw std::runtime_error("Failed to open static/default_build.dat");
+            throw std::runtime_error("Failed to open default_cactus.dat");
         }
 
         std::vector<std::uint8_t> data(

@@ -180,10 +180,10 @@ asio::awaitable<std::vector<GetOutcome>> CFAsyncClient::getManyR2Objects(
     const std::vector<std::string>& keys
 ) const {
 
-    typedef struct{
+    struct GetRes{
         size_t idx; // return results in order
         GetOutcome out;
-    } GetRes;
+    };
 
     auto exe = co_await asio::this_coro::executor;
     asio::experimental::channel<void(boost::system::error_code, GetRes)> channel(exe, keys.size());
@@ -219,10 +219,10 @@ asio::awaitable<std::vector<PutOutcome>> CFAsyncClient::putManyR2Objects(
     const std::vector<std::vector<uint8_t>>& data
 ) const {
 
-    typedef struct{
+    struct PutRes{
         size_t idx;
         PutOutcome out;
-    } PutRes;
+    };
 
     auto exe = co_await asio::this_coro::executor;
     asio::experimental::channel<void(boost::system::error_code, PutRes)> channel(exe, keys.size());

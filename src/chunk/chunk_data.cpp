@@ -26,9 +26,9 @@ int ChunkData::getMappedBwd(const int layer, const int locId){
     if(layer == 1){
         static const std::array<int, VARS::L1_SIZE> map = []() {
             std::array<int, VARS::L1_SIZE> map;
-            std::ifstream file("chunk_maps/l1.bin", std::ios::binary);
+            std::ifstream file("static/cmap_l1.dat", std::ios::binary);
             if (!file) 
-                throw std::runtime_error("Failed to open l1.bin");
+                throw std::runtime_error("Failed to open cmap_l1.dat");
 
             int buf[2];
             while (file.read(reinterpret_cast<char*>(buf), sizeof(buf))) {
@@ -43,9 +43,9 @@ int ChunkData::getMappedBwd(const int layer, const int locId){
     if(layer == 2){
         static const std::array<int, VARS::L2_SIZE> map = []() {
             std::array<int, VARS::L2_SIZE> map;
-            std::ifstream file("chunk_maps/l2.bin", std::ios::binary);
+            std::ifstream file("static/cmap_l2.dat", std::ios::binary);
             if (!file) 
-                throw std::runtime_error("Failed to open l2.bin");
+                throw std::runtime_error("Failed to open cmap_l2.dat");
 
             int buf[2];
             while (file.read(reinterpret_cast<char*>(buf), sizeof(buf))) {
@@ -78,9 +78,9 @@ const std::vector<int>& ChunkData::getMappedFwd(const int layer, const int locId
         static const std::array<std::vector<int>, VARS::L0_SIZE> map = []() {
             std::array<std::vector<int>, VARS::L0_SIZE> map;
 
-            std::ifstream file("chunk_maps/l1.bin", std::ios::binary);
+            std::ifstream file("static/cmap_l1.dat", std::ios::binary);
             if (!file) 
-                throw std::runtime_error("Failed to open l1.bin");
+                throw std::runtime_error("Failed to open cmap_l1.dat");
 
             int buf[2];
             while (file.read(reinterpret_cast<char*>(buf), sizeof(buf))) {
@@ -96,9 +96,9 @@ const std::vector<int>& ChunkData::getMappedFwd(const int layer, const int locId
         static const std::array<std::vector<int>, VARS::L1_SIZE> map = []() {
             std::array<std::vector<int>, VARS::L1_SIZE> map;
 
-            std::ifstream file("chunk_maps/l2.bin", std::ios::binary);
+            std::ifstream file("static/cmap_l2.dat", std::ios::binary);
             if (!file) 
-                throw std::runtime_error("Failed to open l2.bin");
+                throw std::runtime_error("Failed to open cmap_l2.dat");
 
             int buf[2];
             int plotId = 1;
@@ -118,7 +118,7 @@ const std::vector<int>& ChunkData::getMappedFwd(const int layer, const int locId
 
 std::string ChunkData::makeChunkIdStr(const int idl, const int idr, const bool layer){
 
-    return fmt::format("{}{:X}_{:X}", layer ? "l":"", idl, idr);
+    return fmt::format("{}{:x}_{:x}", layer ? "l":"", idl, idr);
 
 }
 

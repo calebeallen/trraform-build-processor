@@ -11,29 +11,25 @@ REDIS_UPDATE_QUEUE = "up:q:0"
 REDIS_UPDATE_NEEDS_UPDATE_PREFIX = "up:nu:"
 REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX = "up:nu:f:"
 REDIS_FLAG_UPDATE_METADATA_FIELDS_ONLY = "mfo"
-REDIS_FLAG_SET_DEFAULT_PLOT = "sdp"
-REDIS_FLAG_SET_DEFAULT_BUILD = "sdb"
-REDIS_FLAG_NO_IMAGE_UPDATE = "niu"
+REDIS_FLAG_SET_DEFAULT_JSON = "sdj";
+REDIS_FLAG_SET_DEFAULT_BUILD = "sdb";
+REDIS_FLAG_NO_IMAGE_UPDATE = "niu";
 
 class UpdateFlags:
     def __init__(
         self,
-        metadata_only = False,
-        default_plot = False,
+        default_json = False,
         default_build = False,
         no_img_update = False
     ):
-        self.metadata_only = metadata_only
-        self.default_plot = default_plot
+        self.default_json = default_json
         self.default_build = default_build
         self.no_img_update = no_img_update
     
-    def __str__():
+    def __str__(self):
         flags = []
-        if self.metadata_only:
-            flags.append(REDIS_FLAG_UPDATE_METADATA_FIELDS_ONLY)
-        if self.default_plot:
-            flags.append(REDIS_FLAG_SET_DEFAULT_PLOT)
+        if self.default_json:
+            flags.append(REDIS_FLAG_SET_DEFAULT_JSON)
         if self.default_build:
             flags.append(REDIS_FLAG_SET_DEFAULT_BUILD)
         if self.no_img_update:

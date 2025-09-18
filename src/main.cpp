@@ -5,6 +5,7 @@
 #include <memory>
 #include <variant>
 #include <chrono>
+#include <atomic>
 
 #include <boost/asio.hpp>
 #include <boost/asio/thread_pool.hpp>
@@ -32,6 +33,7 @@ namespace asio = boost::asio;
 
 using namespace std::chrono_literals;  
 
+
 class InFlightGuard {
 private:
     std::shared_ptr<int> _if;
@@ -39,6 +41,8 @@ public:
     InFlightGuard(std::shared_ptr<int> _if) : _if(_if) { ++(*_if); }
     ~InFlightGuard() { --(*_if); }
 };
+
+static std::atomic<bool> kill = false;
 
 asio::awaitable<void> processChunk(
     redis::connection& redisCli,
@@ -131,10 +135,8 @@ asio::awaitable<void> processChunk(
                     std::string token;
                     
                     while (std::getline(ss, token, ' ')) {
-                        if (token == VARS::REDIS_FLAG_UPDATE_METADATA_FIELDS_ONLY)
-                            updateflags[i].updateMetadataFieldsOnly = true;
-                        else if (token == VARS::REDIS_FLAG_SET_DEFAULT_PLOT)
-                            updateflags[i].setDefaultPlot = true;
+                        if (token == VARS::REDIS_FLAG_SET_DEFAULT_JSON)
+                            updateflags[i].setDefaultJson = true;
                         else if (token == VARS::REDIS_FLAG_SET_DEFAULT_BUILD)
                             updateflags[i].setDefaultBuild = true;
                         else if (token == VARS::REDIS_FLAG_NO_IMAGE_UPDATE)
@@ -209,10 +211,14 @@ asio::awaitable<void> loop(
     std::shared_ptr<int> inFlight = std::make_shared<int>(0);
 
     for (;;) {
+        if (kill.load(std::memory_order_relaxed))
+            co_return;
+
         try {
             timer.expires_after(50ms); // short sleep to unblock 
             co_await timer.async_wait(asio::use_awaitable);
 
+            // throttle
             if (*inFlight >= VARS::MAX_INFLIGHT)
                 continue;
 
@@ -273,6 +279,13 @@ int main() {
     boost::redis::logger lg(boost::redis::logger::level::emerg);
     redis::connection redisCli(ioc);
     redisCli.async_run(cfg, lg, asio::detached);
+
+    // handle sigint sigterm
+    asio::signal_set signals(ioc, SIGINT, SIGTERM);
+    signals.async_wait([&ioc](const boost::system::error_code& ec, int signo) {
+        if (!ec)
+            kill.store(true, std::memory_order_relaxed);
+    });
 
     std::cout << "Starting" << std::endl;
     
