@@ -146,16 +146,17 @@ ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate
 asio::awaitable<void> ChunkData::downloadParts() {
 
     auto obj = co_await _cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat");
+    
     if (obj.err) {
-        if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
-            throw std::runtime_error(obj.errMsg);
+        std::cout << "ChunkId: " << _chunkId << std::endl;
+        // if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
+        //     throw std::runtime_error(obj.errMsg);
         co_return;
     }
-
+    
     // decode into parts
     size_t i = 0, n = obj.body.size();
     while (i < n) {
-
         // read id (64 bit int little endian)
         std::uint64_t id;
         std::memcpy(&id, &obj.body[i], sizeof(std::uint64_t));

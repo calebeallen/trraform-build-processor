@@ -42,7 +42,7 @@ public:
     ~InFlightGuard() { --(*_if); }
 };
 
-static std::atomic<bool> kill = false;
+static std::atomic<bool> killf = false;
 
 asio::awaitable<void> processChunk(
     redis::connection& redisCli,
@@ -157,7 +157,7 @@ asio::awaitable<void> processChunk(
         // pipeline
         co_await chunk->prep();
 
-        
+        std::cout << "prepped" << std::endl;
         co_return;
 
         // process chunk on thread pool
@@ -211,7 +211,7 @@ asio::awaitable<void> loop(
     std::shared_ptr<int> inFlight = std::make_shared<int>(0);
 
     for (;;) {
-        if (kill.load(std::memory_order_relaxed))
+        if (killf.load(std::memory_order_relaxed))
             co_return;
 
         try {
@@ -282,9 +282,11 @@ int main() {
 
     // handle sigint sigterm
     asio::signal_set signals(ioc, SIGINT, SIGTERM);
-    signals.async_wait([&ioc](const boost::system::error_code& ec, int signo) {
-        if (!ec)
-            kill.store(true, std::memory_order_relaxed);
+    signals.async_wait([&ioc](const boost::system::error_code& ec, int) {
+        if (!ec) {
+            killf.store(true, std::memory_order_relaxed);
+            ioc.stop();
+        }
     });
 
     std::cout << "Starting" << std::endl;

@@ -38,12 +38,19 @@ target_link_libraries(${PROJECT_NAME}
 )
 
 # compile optimizations
-target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic -ffunction-sections -fdata-sections -g3)
+target_compile_options(${PROJECT_NAME} PRIVATE
+    -O0                      # No optimization
+    -g3                      # Fullest debug info
+    -Wall                    # Enable all warnings
+    -Wextra                  # Enable extra warnings
+    -Wpedantic               # Enable pedantic warnings
+    -fsanitize=address       # <<< ENABLE ADDRESS SANITIZER
+)
 
 # linker optimizations
 target_link_options(${PROJECT_NAME} PRIVATE
     -flto=auto
-    -Wl,--gc-sections
+    -fsanitize=address
 )
 
 

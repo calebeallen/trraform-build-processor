@@ -38,9 +38,9 @@ asio::awaitable<void> LChunk::prep(){
         const auto id = childIds[i];
         const auto& out = res[i];
 
-        // object must exist
-        if (out.err)
-            throw std::runtime_error(out.errMsg);
+        // object must exist UNCOMMENT BELOW!!
+        // if (out.err)
+        //     throw std::runtime_error(out.errMsg);
         
         // read rows header 4 bytes
         std::uint32_t rows;

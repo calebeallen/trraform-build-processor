@@ -39,60 +39,69 @@ asio::awaitable<void> DChunk::downloadPlotUpdates() {
     for(size_t i = 0; i < _needsUpdate.size(); ++i)
         needsUpdateKeys[i] = fmt::format("{:x}.dat", _needsUpdate[i]);
 
-    auto updates = co_await _cfCli->getManyR2Objects(VARS::CF_PLOTS_BUCKET, needsUpdateKeys);
-
-    // set new plot data
-    for (size_t i = 0; i < updates.size(); ++i) {
-        const std::uint64_t plotId = _needsUpdate[i];
-        const auto& flags = _updateFlags[i];
-        auto& out = updates[i];
-
-        // file must exist here
-        if (out.err)
-            throw std::runtime_error(out.errMsg);
-
-        nlohmann::json json;
-        std::span<const std::uint8_t> buildPart;
-
-        /*
-        cases:
-            standard update: no flags
-            subscription created: no flags
-            subscription canceled: no flags
-            plot removed: default build and default json
-        */
-        if (flags.setDefaultJson) 
-            json = Plot::getDefaultJsonPart();
-        else
-            json = Plot::getJsonPart(out.body);
-
-        if (flags.setDefaultBuild)
-            buildPart = Plot::getDefaultBuildData();
-        else
-            buildPart = Plot::getBuildData(out.body);
-        
-        // update metadata fields
-        if (out.metadata.find("verified") != out.metadata.end())
-            throw std::runtime_error("Plot missing verified metadata");
-        if (out.metadata.find("owner") != out.metadata.end())
-            throw std::runtime_error("Plot missing owner metadata");
-
-        bool verified = out.metadata["verified"] == "true";
-        json["verified"] = verified;
-        json["owner"] = out.metadata["owner"];
-
-        // remove subscriber fields
-        if (!verified) {
-            json["link"] = "";
-            json["linkTitle"] = "";
-            // if build data is greater than max size, remove build
-            if (Plot::getBuildSize(out.body) > VARS::BUILD_SIZE_STD)
-                buildPart = Plot::getDefaultBuildData();
-        }
-
-        // repack plot data
-        _parts[plotId] = Plot::makePlotData(json, buildPart);
+    {
+        std::cout << "here" << std::endl;
+        auto updates = co_await _cfCli->getManyR2Objects(VARS::CF_PLOTS_BUCKET, needsUpdateKeys);
+        std::cout << "here1" << std::endl;
     }
+
+    // // set new plot data
+    // for (size_t i = 0; i < updates.size(); ++i) {
+    //     const std::uint64_t plotId = _needsUpdate[i];
+    //     const auto& flags = _updateFlags[i];
+    //     auto& out = updates[i];
+
+    //     // file must exist here
+    //     std::cout << "ferr " << out.err << " " + out.errMsg << std::endl;
+    //     if (out.err)
+    //         throw std::runtime_error(out.errMsg);
+
+    //     nlohmann::json json;
+    //     std::span<const std::uint8_t> buildPart;
+
+    //     /*
+    //     cases:
+    //         standard update: no flags
+    //         subscription created: no flags
+    //         subscription canceled: no flags
+    //         plot removed: default build and default json
+    //     */
+    //     if (flags.setDefaultJson) 
+    //         json = Plot::getDefaultJsonPart();
+    //     else
+    //         json = Plot::getJsonPart(out.body);
+        
+    //     if (flags.setDefaultBuild)
+    //         buildPart = Plot::getDefaultBuildData();
+    //     else
+    //         buildPart = Plot::getBuildData(out.body);
+
+    //     // update metadata fields
+    //     if (out.metadata.find("verified") == out.metadata.end())
+    //         throw std::runtime_error("Plot missing verified metadata");
+    //     if (out.metadata.find("owner") == out.metadata.end())
+    //         throw std::runtime_error("Plot missing owner metadata");
+
+    //     bool verified = out.metadata["verified"] == "true";
+    //     json["verified"] = verified;
+    //     json["owner"] = out.metadata["owner"];
+
+    //     // remove subscriber fields
+    //     if (!verified) {
+    //         json["link"] = "";
+    //         json["linkTitle"] = "";
+    //         // if build data is greater than max size, remove build
+    //         std::cout << Plot::getBuildSize(out.body) << std::endl;
+    //         if (Plot::getBuildSize(out.body) > VARS::BUILD_SIZE_STD)
+    //             buildPart = Plot::getDefaultBuildData();
+    //     }
+
+    //     // repack plot data
+    //     _parts[plotId] = Plot::makePlotData(json, buildPart);
+    //     std::cout << "here" << std::endl;
+    // }
+
+    std::cout << "here" << std::endl;
 
 }
 
@@ -115,6 +124,7 @@ asio::awaitable<void> DChunk::prep() {
 
     co_await downloadParts();
     co_await downloadPlotUpdates();
+    std::cout << "done" << std::endl;
 
 }
 
@@ -125,7 +135,7 @@ void DChunk::process() {
         const auto plotId = _needsUpdate[i];
         if (!_updateFlags[i].noImageUpdate) {
             const auto buildData = Plot::getBuildPart(_parts[plotId]);
-            _updatedImagesKeys.emplace_back(fmt::format("{:X}.png", plotId));
+            _updatedImagesKeys.emplace_back(fmt::format("{:x}.png", plotId));
             _updatedImages.emplace_back(BuildImage::make(buildData));
         }
     }
