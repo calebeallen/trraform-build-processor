@@ -15,6 +15,8 @@
 #include <boost/asio/detached.hpp>
 #include <cpr/cpr.h>
 #include <aws/core/Aws.h>
+#include <aws/s3/model/HeadObjectRequest.h>
+#include <aws/s3/model/HeadObjectResult.h>
 #include <aws/s3/model/GetObjectRequest.h>
 #include <aws/s3/model/PutObjectRequest.h>
 #include <aws/s3/model/GetObjectResult.h>
@@ -54,24 +56,20 @@ CFAsyncClient::~CFAsyncClient() {
     Aws::ShutdownAPI(_s3CliOpts);
 }
 
-asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(
-    const std::string& bucket, 
-    const std::string& key
-) const {
-
-    Aws::S3::Model::GetObjectRequest req;
-    req.SetBucket(bucket);
-    req.SetKey(key);
+asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(const GetParams& params) const {
 
     GetOutcome obj;
 
     co_await asio::async_initiate<decltype(asio::use_awaitable), void()>(
-        [this, &req, &obj](auto&& handler) mutable {
+        [this, &params, &obj](auto&& handler) mutable {
+            Aws::S3::Model::GetObjectRequest req;
+            req.SetBucket(params.bucket);
+            req.SetKey(params.key);
 
             // make handler copyable
             using HandlerT = std::decay_t<decltype(handler)>;
             std::shared_ptr<HandlerT> hptr = std::make_shared<HandlerT>(std::move(handler));
-
+ 
             _s3Cli->GetObjectAsync(req,
                 [hptr, &obj](
                     const Aws::S3::S3Client*,
@@ -79,16 +77,14 @@ asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(
                     const Aws::S3::Model::GetObjectOutcome& awsOut,
                     const std::shared_ptr<const Aws::Client::AsyncCallerContext>&
                 ) mutable {
-                   
                     if (awsOut.IsSuccess()) {
                         const auto& res = awsOut.GetResult();
-
-                        // for (const auto& kv : res.GetMetadata())
-                        //     obj.metadata.emplace(kv.first.c_str(), kv.second.c_str());
+                        for (const auto& kv : res.GetMetadata())
+                            obj.metadata.emplace(kv.first, kv.second);
 
                         auto& body = res.GetBody();  
-                        obj.body.assign(std::istreambuf_iterator<char>(body), std::istreambuf_iterator<char>());
-                                            
+                        obj.body.reserve(res.GetContentLength());
+                        obj.body.assign(std::istreambuf_iterator<char>(body), std::istreambuf_iterator<char>());        
                     } else {
                         obj.err = true;
                         const auto& err = awsOut.GetError();
@@ -98,9 +94,8 @@ asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(
                     
                     asio::post(
                         asio::get_associated_executor(*hptr), 
-                        [hptr]() mutable { 
-                            (*hptr)(); 
-                    });
+                        [hptr]() mutable { (*hptr)();}
+                    );
                 }
             );
         },
@@ -112,27 +107,74 @@ asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(
 }
 
 
-asio::awaitable<PutOutcome> CFAsyncClient::putR2Object(
-    const std::string& bucket, 
-    const std::string& key, 
-    const std::string& contentType, 
-    const std::vector<uint8_t>& data
-) const {
+asio::awaitable<GetOutcome> CFAsyncClient::headR2Object(const GetParams& params) const {
 
-    co_return co_await asio::async_initiate<decltype(asio::use_awaitable), void(PutOutcome)>(
-        [this, &bucket, &key, &contentType, &data](auto&& handler) mutable {
+    GetOutcome obj;
+
+    co_await asio::async_initiate<decltype(asio::use_awaitable), void()>(
+        [this, &params, &obj](auto&& handler) mutable {
+            Aws::S3::Model::HeadObjectRequest req;
+            req.SetBucket(params.bucket);
+            req.SetKey(params.key);
+
+            // make handler copyable
+            using HandlerT = std::decay_t<decltype(handler)>;
+            std::shared_ptr<HandlerT> hptr = std::make_shared<HandlerT>(std::move(handler));
+
+            _s3Cli->HeadObjectAsync(req,
+                [hptr, &obj](
+                    const Aws::S3::S3Client*,
+                    const Aws::S3::Model::HeadObjectRequest&,
+                    const Aws::S3::Model::HeadObjectOutcome& awsOut,
+                    const std::shared_ptr<const Aws::Client::AsyncCallerContext>&
+                ) mutable {
+                    if (awsOut.IsSuccess()) {
+                        const auto& res = awsOut.GetResult();
+                        for (const auto& kv : res.GetMetadata())
+                            obj.metadata.emplace(kv.first, kv.second);
+
+                    } else {
+                        obj.err = true;
+                        const auto& err = awsOut.GetError();
+                        obj.errType = err.GetErrorType();
+                        obj.errMsg = "R2 GetObject error: " + err.GetMessage();
+                    }
+                    
+                    asio::post(
+                        asio::get_associated_executor(*hptr), 
+                        [hptr]() mutable { (*hptr)();}
+                    );
+                }
+            );
+        },
+        asio::use_awaitable
+    );
+
+    co_return obj;
+}
+
+
+
+asio::awaitable<PutOutcome> CFAsyncClient::putR2Object(const PutParams& params) const {
+
+    PutOutcome obj;
+
+    co_await asio::async_initiate<decltype(asio::use_awaitable), void()>(
+        [this, &params, &obj](auto&& handler) mutable {
             Aws::S3::Model::PutObjectRequest req;
-            req.SetBucket(bucket);
-            req.SetKey(key);
+            req.SetBucket(params.bucket);
+            req.SetKey(params.key);
 
             // Build body
             auto body = Aws::MakeShared<Aws::StringStream>("PutR2ObjectBody");
-            body->write(reinterpret_cast<const char*>(data.data()),
-                        static_cast<std::streamsize>(data.size()));
+            body->write(
+                reinterpret_cast<const char*>(params.data.data()), 
+                static_cast<std::streamsize>(params.data.size())
+            );
             body->seekg(0);
             req.SetBody(body);
-            req.SetContentLength(static_cast<long long>(data.size()));
-            req.SetContentType(contentType);
+            req.SetContentLength(static_cast<long long>(params.data.size()));
+            req.SetContentType(params.contentType);
 
             auto exe = asio::get_associated_executor(handler);
 
@@ -142,147 +184,126 @@ asio::awaitable<PutOutcome> CFAsyncClient::putR2Object(
 
             _s3Cli->PutObjectAsync(
                 req,
-                [hptr, exe](
+                [hptr, &obj](
                     const Aws::S3::S3Client*,
                     const Aws::S3::Model::PutObjectRequest&,
-                    const Aws::S3::Model::PutObjectOutcome& awsOut,
+                    const Aws::S3::Model::PutObjectOutcome& out,
                     const std::shared_ptr<const Aws::Client::AsyncCallerContext>&
                 ) mutable {
                     
-                    PutOutcome out;
-                    
-                    if (!awsOut.IsSuccess()) {
-                        out.err = true;
-                        const auto& err = awsOut.GetError();
-                        out.errType = err.GetErrorType();
-                        out.errMsg = "R2 PutObject error: " + err.GetMessage();
+                    if (!out.IsSuccess()) {
+                        const auto& err = out.GetError();
+                        obj.err = true;
+                        obj.errType = err.GetErrorType();
+                        obj.errMsg = "R2 PutObject error: " + err.GetMessage();
                     }
 
                     asio::post(
-                        exe, 
-                        [hptr, out = std::move(out)]() mutable { 
-                            (*hptr)(std::move(out)); 
-                    });
+                        asio::get_associated_executor(*hptr), 
+                        [hptr]() mutable {(*hptr)();}
+                    );
                 }
             );
         },
         asio::use_awaitable
     );
 
+    co_return obj;
 }
 
-asio::awaitable<std::vector<GetOutcome>> CFAsyncClient::getManyR2Objects(
-    const std::string bucket, 
-    const std::vector<std::string> keys
-) const {
+asio::awaitable<std::vector<GetOutcome>> CFAsyncClient::getManyR2Objects(const std::vector<GetParams>& requests) const {
 
     auto exe = co_await asio::this_coro::executor;
-    asio::experimental::channel<void(boost::system::error_code, int)> channel(exe, keys.size());
-    std::vector<GetOutcome> results(keys.size());
+    asio::experimental::channel<void(boost::system::error_code, int)> channel(exe, requests.size());
+    std::vector<GetOutcome> results(requests.size());
 
     // parallelize request
-    for (size_t i = 0; i < keys.size(); ++i) {
-        const std::string key = keys[i];
+    for (size_t i = 0; i < requests.size(); ++i)
         asio::co_spawn(
             exe,
-            [this, i, bucket, key, &channel, &results]() -> asio::awaitable<void> {
-                results[i] = co_await getR2Object(bucket, key);
+            [this, i, &requests, &channel, &results]() -> asio::awaitable<void> {
+                results[i] = co_await getR2Object(requests[i]);
                 co_await channel.async_send({}, 0, asio::use_awaitable);
             },
             asio::detached
         );
-    }
 
     // wait for all results
-    for (size_t i = 0; i < keys.size(); ++i) 
+    for (size_t i = 0; i < requests.size(); ++i) 
         co_await channel.async_receive(asio::use_awaitable);
 
     channel.close();
     co_return results;
 }
 
-asio::awaitable<std::vector<PutOutcome>> CFAsyncClient::putManyR2Objects(
-    const std::string& bucket, 
-    const std::vector<std::string>& keys, 
-    const std::string& contentType, 
-    const std::vector<std::vector<uint8_t>>& data
-) const {
-
-    struct PutRes{
-        size_t idx;
-        PutOutcome out;
-    };
+asio::awaitable<std::vector<PutOutcome>> CFAsyncClient::putManyR2Objects(const std::vector<PutParams>& requests) const {
 
     auto exe = co_await asio::this_coro::executor;
-    asio::experimental::channel<void(boost::system::error_code, PutRes)> channel(exe, keys.size());
+    asio::experimental::channel<void(boost::system::error_code, int)> channel(exe, requests.size());
+    std::vector<PutOutcome> results(requests.size());
 
     // parallelize request
-    for (size_t i = 0; i < keys.size(); ++i) {
+    for (size_t i = 0; i < requests.size(); ++i)
         asio::co_spawn(
             exe,
-            [this, i, &bucket, &keys, &contentType, &data, &channel]() -> asio::awaitable<void> {
-                auto out = co_await putR2Object(bucket, keys[i], contentType, data[i]);
-                co_await channel.async_send({}, PutRes{i,std::move(out)}, asio::use_awaitable);
+            [this, i, &requests, &channel, &results]() -> asio::awaitable<void> {
+                results[i] = co_await putR2Object(requests[i]);
+                co_await channel.async_send({}, 0, asio::use_awaitable);
             },
             asio::detached
         );
-    }
 
     // wait for all results
-    std::vector<PutOutcome> all(keys.size());
-
-    for (size_t i = 0; i < keys.size(); ++i) {
-        auto res = co_await channel.async_receive(asio::use_awaitable);
-        all[res.idx] = std::move(res.out);
-    }
+    for (size_t i = 0; i < requests.size(); ++i) 
+        co_await channel.async_receive(asio::use_awaitable);
 
     channel.close();
-    co_return all;
+    co_return results;
     
 };
 
-void CFAsyncClient::purgeCache(const std::vector<std::string>& urls) const {
+// void CFAsyncClient::purgeCache(const std::vector<std::string>& urls) const {
 
-    nlohmann::json payload;
-    nlohmann::json filesArray = nlohmann::json::array();
+//     nlohmann::json payload;
+//     nlohmann::json filesArray = nlohmann::json::array();
 
-    for (const auto& url : urls) {
-        filesArray.push_back({
-            {"url", url},
-            {"headers", {
-                {"Origin", VARS::ORIGIN}
-            }}
-        });
-    }
-    payload["files"] = filesArray;
+//     for (const auto& url : urls) {
+//         filesArray.push_back({
+//             {"url", url},
+//             {"headers", {
+//                 {"Origin", VARS::ORIGIN}
+//             }}
+//         });
+//     }
+//     payload["files"] = filesArray;
 
-    std::string apiUrl = "https://api.cloudflare.com/client/v4/zones/" + VARS::CF_ZONE_ID + "/purge_cache";
-    cpr::Response r = cpr::Post(
-        cpr::Url{apiUrl},
-        cpr::Header{
-            {"Authorization", "Bearer " + _apiToken},
-            {"Content-Type", "application/json"}
-        },
-        cpr::Body{payload.dump()}
-    );
+//     std::string apiUrl = "https://api.cloudflare.com/client/v4/zones/" + VARS::CF_ZONE_ID + "/purge_cache";
+//     cpr::Response r = cpr::Post(
+//         cpr::Url{apiUrl},
+//         cpr::Header{
+//             {"Authorization", "Bearer " + _apiToken},
+//             {"Content-Type", "application/json"}
+//         },
+//         cpr::Body{payload.dump()}
+//     );
 
-    if (r.status_code != 200) {
-        std::cerr << "API request failed with status code " + std::to_string(r.status_code) + ": " + r.text;
-        return;
-    }
+//     if (r.status_code != 200) {
+//         std::cerr << "API request failed with status code " + std::to_string(r.status_code) + ": " + r.text;
+//         return;
+//     }
 
-    try {
-        nlohmann::json purgeRes = nlohmann::json::parse(r.text);
+//     try {
+//         nlohmann::json purgeRes = nlohmann::json::parse(r.text);
 
-        if (!purgeRes.value("success", false)) {
-            std::string errorMsg = "Cloudflare API reported a failure.";
-            if (purgeRes.contains("errors")) {
-                errorMsg += " Errors: " + purgeRes["errors"].dump();
-            }
-            std::cerr << errorMsg;
-        }
-    } catch (const nlohmann::json::parse_error& e) {
-        std::cerr << "Failed to parse JSON response: " + std::string(e.what());
-    }
+//         if (!purgeRes.value("success", false)) {
+//             std::string errorMsg = "Cloudflare API reported a failure.";
+//             if (purgeRes.contains("errors")) {
+//                 errorMsg += " Errors: " + purgeRes["errors"].dump();
+//             }
+//             std::cerr << errorMsg;
+//         }
+//     } catch (const nlohmann::json::parse_error& e) {
+//         std::cerr << "Failed to parse JSON response: " + std::string(e.what());
+//     }
 
-}
+// }

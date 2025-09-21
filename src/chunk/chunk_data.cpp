@@ -145,7 +145,7 @@ ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate
 
 asio::awaitable<void> ChunkData::downloadParts() {
 
-    auto obj = co_await _cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat");
+    auto obj = co_await _cfCli->getR2Object({ VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat" });
     
     if (obj.err) {
         std::cout << "ChunkId: " << _chunkId << std::endl;
@@ -201,7 +201,7 @@ asio::awaitable<void> ChunkData::uploadParts(){
 
     }
 
-    auto out = co_await _cfCli->putR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat", "application/octet-stream", data);
+    auto out = co_await _cfCli->putR2Object({ VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat", "application/octet-stream", std::move(data) });
     if (out.err)
         throw std::runtime_error(out.errMsg);
 
