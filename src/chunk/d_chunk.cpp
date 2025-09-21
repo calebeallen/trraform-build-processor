@@ -31,89 +31,88 @@ DChunk::DChunk(
 
 }
 
-
 asio::awaitable<void> DChunk::downloadPlotUpdates() {
 
     // pull updates
-    std::vector<std::string> needsUpdateKeys(_needsUpdate.size());
+    std::vector<GetParams> requests;
+    requests.reserve(_needsUpdate.size());
     for(size_t i = 0; i < _needsUpdate.size(); ++i)
-        needsUpdateKeys[i] = fmt::format("{:x}.dat", _needsUpdate[i]);
+        requests.push_back({
+            VARS::CF_PLOTS_BUCKET,
+            fmt::format("{:x}.dat", _needsUpdate[i]),
+            _updateFlags[i].metadataOnly
+        });
 
-    {
-        std::cout << "here" << std::endl;
-        auto updates = co_await _cfCli->getManyR2Objects(VARS::CF_PLOTS_BUCKET, needsUpdateKeys);
-        std::cout << "here1" << std::endl;
-    }
+    auto updates = co_await _cfCli->getManyR2Objects(requests);
+     
+    // set new plot data
+    for (size_t i = 0; i < _needsUpdate.size(); ++i) {
+        const std::uint64_t plotId = _needsUpdate[i];
+        const auto& flags = _updateFlags[i];
+        const auto& obj = updates[i];
 
-    // // set new plot data
-    // for (size_t i = 0; i < updates.size(); ++i) {
-    //     const std::uint64_t plotId = _needsUpdate[i];
-    //     const auto& flags = _updateFlags[i];
-    //     auto& out = updates[i];
+        // file must exist here
+        if (obj.err)
+            throw std::runtime_error(obj.errMsg);
 
-    //     // file must exist here
-    //     std::cout << "ferr " << out.err << " " + out.errMsg << std::endl;
-    //     if (out.err)
-    //         throw std::runtime_error(out.errMsg);
+        nlohmann::json json;
+        std::span<const std::uint8_t> buildPart;
 
-    //     nlohmann::json json;
-    //     std::span<const std::uint8_t> buildPart;
-
-    //     /*
-    //     cases:
-    //         standard update: no flags
-    //         subscription created: no flags
-    //         subscription canceled: no flags
-    //         plot removed: default build and default json
-    //     */
-    //     if (flags.setDefaultJson) 
-    //         json = Plot::getDefaultJsonPart();
-    //     else
-    //         json = Plot::getJsonPart(out.body);
+        if (flags.setDefaultJson) 
+            json = Plot::getDefaultJsonPart();
+        else if (!flags.metadataOnly)
+            json = Plot::getJsonPart(obj.body);
         
-    //     if (flags.setDefaultBuild)
-    //         buildPart = Plot::getDefaultBuildData();
-    //     else
-    //         buildPart = Plot::getBuildData(out.body);
+        if (flags.setDefaultBuild)
+            buildPart = Plot::getDefaultBuildData();
+        else if (!flags.metadataOnly)
+            buildPart = Plot::getBuildData(obj.body);
+        
+        const auto itv = obj.metadata.find("verified");
+        if (itv == obj.metadata.end())
+            throw std::runtime_error("Plot missing verified metadata");
+        const auto ito = obj.metadata.find("owner");
+        if (ito == obj.metadata.end())
+            throw std::runtime_error("Plot missing owner metadata");
 
-    //     // update metadata fields
-    //     if (out.metadata.find("verified") == out.metadata.end())
-    //         throw std::runtime_error("Plot missing verified metadata");
-    //     if (out.metadata.find("owner") == out.metadata.end())
-    //         throw std::runtime_error("Plot missing owner metadata");
+        bool verified = itv->second == "true";
+        json["verified"] = verified;
+        json["owner"] = ito->second;
 
-    //     bool verified = out.metadata["verified"] == "true";
-    //     json["verified"] = verified;
-    //     json["owner"] = out.metadata["owner"];
+        // remove subscriber features if needed
+        if (!verified) {
+            json["link"] = "";
+            json["linkTitle"] = "";
 
-    //     // remove subscriber fields
-    //     if (!verified) {
-    //         json["link"] = "";
-    //         json["linkTitle"] = "";
-    //         // if build data is greater than max size, remove build
-    //         std::cout << Plot::getBuildSize(out.body) << std::endl;
-    //         if (Plot::getBuildSize(out.body) > VARS::BUILD_SIZE_STD)
-    //             buildPart = Plot::getDefaultBuildData();
-    //     }
+            // if build data is greater than max size, remove build
+            std::cout << Plot::getBuildSize(obj.body) << std::endl;
+            if (Plot::getBuildSize(obj.body) > VARS::BUILD_SIZE_STD)
+                buildPart = Plot::getDefaultBuildData();
+        }
 
-    //     // repack plot data
-    //     _parts[plotId] = Plot::makePlotData(json, buildPart);
-    //     std::cout << "here" << std::endl;
-    // }
-
-    std::cout << "here" << std::endl;
-
+        // repack plot data
+        _parts[plotId] = Plot::makePlotData(json, buildPart);
+    }
 }
 
 asio::awaitable<void> DChunk::uploadImages() {
 
-    const auto results = co_await _cfCli->putManyR2Objects(
-        VARS::CF_IMAGES_BUCKET,
-        _updatedImagesKeys,
-        "image/png",
-        _updatedImages
-    );
+    std::vector<PutParams> requests; 
 
+    for (size_t i = 0; i < _needsUpdate.size(); i++) {
+        const auto& imgData = _updatedImages[i];
+        if (!imgData) 
+            continue;
+
+        requests.push_back({
+            VARS::CF_IMAGES_BUCKET,
+            fmt::format("{:x}.png", _needsUpdate[i]),
+            "image/png",
+            std::move(*imgData)
+        });
+    }
+
+    const auto results = co_await _cfCli->putManyR2Objects(requests);
     for (const auto& res : results)
         if (res.err)
             throw std::runtime_error(res.errMsg);
@@ -124,18 +123,20 @@ asio::awaitable<void> DChunk::prep() {
 
     co_await downloadParts();
     co_await downloadPlotUpdates();
-    std::cout << "done" << std::endl;
 
 }
 
 void DChunk::process() {
 
     // create new images for plots that need update
+    _updatedImages.reserve(_needsUpdate.size());
     for (size_t i = 0; i < _needsUpdate.size(); ++i) {
         const auto plotId = _needsUpdate[i];
-        if (!_updateFlags[i].noImageUpdate) {
+
+        if (_updateFlags[i].noImageUpdate)
+            _updatedImages.emplace_back(std::nullopt);
+        else {
             const auto buildData = Plot::getBuildPart(_parts[plotId]);
-            _updatedImagesKeys.emplace_back(fmt::format("{:x}.png", plotId));
             _updatedImages.emplace_back(BuildImage::make(buildData));
         }
     }

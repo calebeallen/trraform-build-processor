@@ -79,8 +79,8 @@ asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(const GetParams& params) 
                 ) mutable {
                     if (awsOut.IsSuccess()) {
                         const auto& res = awsOut.GetResult();
-                        for (const auto& kv : res.GetMetadata())
-                            obj.metadata.emplace(kv.first, kv.second);
+                        for (const auto& [k, v] : res.GetMetadata())
+                            obj.metadata.emplace(k, v);
 
                         auto& body = res.GetBody();  
                         obj.body.reserve(res.GetContentLength());
@@ -130,8 +130,8 @@ asio::awaitable<GetOutcome> CFAsyncClient::headR2Object(const GetParams& params)
                 ) mutable {
                     if (awsOut.IsSuccess()) {
                         const auto& res = awsOut.GetResult();
-                        for (const auto& kv : res.GetMetadata())
-                            obj.metadata.emplace(kv.first, kv.second);
+                        for (const auto& [k, v] : res.GetMetadata())
+                            obj.metadata.emplace(k, v);
 
                     } else {
                         obj.err = true;

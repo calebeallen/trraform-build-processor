@@ -12,6 +12,7 @@
 #include "utils/cf_async_client.hpp"
 
 struct UpdateFlags {
+    bool metadataOnly = false;
     bool setDefaultJson = false;
     bool setDefaultBuild = false;
     bool noImageUpdate = false;
@@ -20,8 +21,7 @@ struct UpdateFlags {
 class DChunk : public ChunkData {
 
 protected:
-    std::vector<std::string> _updatedImagesKeys;
-    std::vector<std::vector<std::uint8_t>> _updatedImages;
+    std::vector<std::optional<std::vector<std::uint8_t>>> _updatedImages;
 
     std::vector<UpdateFlags> _updateFlags;
    

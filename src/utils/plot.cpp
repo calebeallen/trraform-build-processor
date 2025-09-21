@@ -9,20 +9,6 @@
 
 #include "utils/plot.hpp"
 
-static size_t getUint32LE(const uint8_t* data) {
-    return static_cast<size_t>(data[0]) |
-        (static_cast<size_t>(data[1]) << 8) |
-        (static_cast<size_t>(data[2]) << 16) |
-        (static_cast<size_t>(data[3]) << 24);
-}
-
-static void setUint32LE(uint8_t* data, std::uint32_t val) {
-    data[0] = static_cast<uint8_t>(val);
-    data[1] = static_cast<uint8_t>(val >> 8);
-    data[2] = static_cast<uint8_t>(val >> 16);
-    data[3] = static_cast<uint8_t>(val >> 24);
-}
-
 
 nlohmann::json Plot::getDefaultJsonPart() {
 
@@ -39,8 +25,7 @@ nlohmann::json Plot::getDefaultJsonPart() {
 
 }
 
-
-const std::span<const std::uint8_t> Plot::getDefaultBuildData() {
+std::span<const std::uint8_t> Plot::getDefaultBuildData() {
 
     static const auto defaultBuild = []() {
         std::ifstream file("static/default_cactus.dat", std::ios::binary);
@@ -56,21 +41,24 @@ const std::span<const std::uint8_t> Plot::getDefaultBuildData() {
         return data;
     }();
 
-    return defaultBuild;
+    return { defaultBuild.data(), defaultBuild.size() };
 
 }
 
+std::span<const std::uint8_t> Plot::getBuildData(const std::vector<std::uint8_t>& plotData) {
 
-const std::span<const std::uint8_t> Plot::getBuildData(const std::vector<std::uint8_t>& plotData) {
+    std::uint32_t jsonLen;
+    std::memcpy(&jsonLen, plotData.data(), sizeof(std::uint32_t));
+    const size_t offset = static_cast<size_t>(jsonLen) + 8;
 
-    const size_t jsonLen = getUint32LE(&plotData[0]);
-    return std::span<const std::uint8_t>(plotData.begin() + jsonLen + 8, plotData.end());
- 
+    return { plotData.data() + offset, plotData.size() - offset };
+
 }
 
-nlohmann::json Plot::getJsonPart(std::vector<std::uint8_t>& plotData) {
+nlohmann::json Plot::getJsonPart(const std::vector<std::uint8_t>& plotData) {
 
-    const size_t jsonLen = getUint32LE(&plotData[0]);
+    std::uint32_t jsonLen;
+    std::memcpy(&jsonLen, plotData.data(), sizeof(std::uint32_t));
 
     const char* begin = reinterpret_cast<const char*>(&plotData[4]);
     const char* end = begin + jsonLen;
@@ -81,8 +69,11 @@ nlohmann::json Plot::getJsonPart(std::vector<std::uint8_t>& plotData) {
 
 std::vector<std::uint16_t> Plot::getBuildPart(const std::vector<std::uint8_t>& plotData) {
 
-    const size_t jsonLen = getUint32LE(&plotData[0]);
-    const size_t buildLen = getUint32LE(&plotData[jsonLen + 4]);
+    std::uint32_t jsonLen;
+    std::uint32_t buildLen;
+
+    std::memcpy(&jsonLen, plotData.data(), sizeof(std::uint32_t));
+    std::memcpy(&buildLen, plotData.data() + jsonLen + 4, sizeof(std::uint32_t));
 
     // copy to avoid misalignment
     std::vector<std::uint16_t> buildData(buildLen / 2);
@@ -92,32 +83,33 @@ std::vector<std::uint16_t> Plot::getBuildPart(const std::vector<std::uint8_t>& p
  
 }
 
-int Plot::getBuildSize(const std::vector<std::uint8_t>& plotData) {
+std::uint16_t Plot::getBuildSize(const std::vector<std::uint8_t>& plotData) {
 
-    const size_t jsonLen = getUint32LE(&plotData[0]);
-    const size_t buildLen = getUint32LE(&plotData[jsonLen + 4]);
+    std::uint32_t jsonLen;
+    std::uint16_t buildSize;
 
+    std::memcpy(&jsonLen, plotData.data(), sizeof(std::uint32_t));
+    std::memcpy(&buildSize, plotData.data() + jsonLen + 10, sizeof(std::uint16_t));
+    
     // skip to build part
-    const size_t i = jsonLen + 10;
-
-    return static_cast<int>(plotData[i]) | (static_cast<int>(plotData[i+1]) << 8);
+    return buildSize;
 
 }
 
 std::vector<std::uint8_t> Plot::makePlotData(const nlohmann::json& json, const std::span<const std::uint8_t>& buildData) {
 
-    const auto jsonData = nlohmann::json::to_cbor(json);
-    const size_t jsonLen = jsonData.size();
-    const size_t buildLen = buildData.size();
+    const std::string jsonData = json.dump();
+    const std::uint32_t jsonLen = jsonData.size();
+    const std::uint32_t buildLen = buildData.size();
     std::vector<std::uint8_t> plotData(jsonLen + buildLen + 8);
 
     // set len prefixes
-    setUint32LE(&plotData[0], jsonLen);
-    setUint32LE(&plotData[jsonLen + 4], buildLen);
+    std::memcpy(plotData.data(), &jsonLen, sizeof(std::uint32_t));
+    std::memcpy(plotData.data() + jsonLen + 4, &buildLen, sizeof(std::uint32_t));
 
     // set data
-    std::memcpy(&plotData[4], &jsonData[0], jsonLen);
-    std::memcpy(&plotData[jsonLen + 8], &buildData[0], buildLen);
+    std::memcpy(plotData.data() + 4, jsonData.data(), jsonLen);
+    std::memcpy(plotData.data() + jsonLen + 8, buildData.data(), buildLen);
 
     return plotData;
 

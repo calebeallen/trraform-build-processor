@@ -145,26 +145,29 @@ ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate
 
 asio::awaitable<void> ChunkData::downloadParts() {
 
-    auto obj = co_await _cfCli->getR2Object({ VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat" });
+    auto obj = co_await _cfCli->getR2Object({ 
+        VARS::CF_CHUNKS_BUCKET, 
+        _chunkId + ".dat" 
+    });
     
     if (obj.err) {
-        std::cout << "ChunkId: " << _chunkId << std::endl;
-        // if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
-        //     throw std::runtime_error(obj.errMsg);
+        std::cout << "ChunkId: " << _chunkId << ": " << obj.errMsg << std::endl;
+        if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
+            throw std::runtime_error(obj.errMsg);
         co_return;
     }
     
     // decode into parts
-    size_t i = 0, n = obj.body.size();
-    while (i < n) {
+    size_t i = 0;
+    while (i < obj.body.size()) {
         // read id (64 bit int little endian)
         std::uint64_t id;
-        std::memcpy(&id, &obj.body[i], sizeof(std::uint64_t));
+        std::memcpy(&id, obj.body.data() + i, sizeof(std::uint64_t));
         i += 8;
 
         // read part len metadata (32 bit int little endian)
         std::uint32_t partLen;
-        std::memcpy(&partLen, &obj.body[i], sizeof(std::uint32_t));
+        std::memcpy(&partLen, obj.body.data() + i, sizeof(std::uint32_t));
         i += 4;
 
         std::vector<std::uint8_t> part(obj.body.begin() + i, obj.body.begin() + i + partLen);
@@ -185,24 +188,27 @@ asio::awaitable<void> ChunkData::uploadParts(){
     std::vector<uint8_t> data(size);
     size_t i = 0;
     for(auto& [id, part] : _parts){
-
         // set id
-        std::memcpy(&data[i], &id, sizeof(uint64_t));
+        std::memcpy(data.data() + i, &id, sizeof(uint64_t));
         i += 8;
 
         // set part len metadata
         uint32_t partLen = part.size();
-        std::memcpy(&data[i], &partLen, sizeof(uint32_t));
+        std::memcpy(data.data() + i, &partLen, sizeof(uint32_t));
         i += 4;
 
         // set part
-        std::copy(part.begin(), part.end(), data.begin() + i);
+        std::memcpy(data.data() + i, part.data(), part.size());
         i += partLen;
-
     }
 
-    auto out = co_await _cfCli->putR2Object({ VARS::CF_CHUNKS_BUCKET, _chunkId + ".dat", "application/octet-stream", std::move(data) });
+    auto out = co_await _cfCli->putR2Object({
+        VARS::CF_CHUNKS_BUCKET, 
+        _chunkId + ".dat", 
+        "application/octet-stream", 
+        std::move(data) 
+    });
+
     if (out.err)
         throw std::runtime_error(out.errMsg);
-
 }
