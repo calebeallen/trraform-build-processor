@@ -25,7 +25,7 @@ DChunk::DChunk(
     std::vector<std::uint64_t> needsUpdate, 
     std::vector<UpdateFlags> updateFlags, 
     std::shared_ptr<CFAsyncClient> cfCli
-) : ChunkData(chunkId, std::move(needsUpdate), cfCli) {
+) : ChunkData(std::move(chunkId), std::move(needsUpdate), std::move(cfCli)) {
 
     _updateFlags = std::move(updateFlags);
 
@@ -34,16 +34,19 @@ DChunk::DChunk(
 asio::awaitable<void> DChunk::downloadPlotUpdates() {
 
     // pull updates
-    std::vector<GetParams> requests;
-    requests.reserve(_needsUpdate.size());
-    for(size_t i = 0; i < _needsUpdate.size(); ++i)
-        requests.push_back({
-            VARS::CF_PLOTS_BUCKET,
-            fmt::format("{:x}.dat", _needsUpdate[i]),
-            _updateFlags[i].metadataOnly
-        });
+    std::vector<GetOutcome> updates;
+    {
+        std::vector<GetParams> requests;
+        requests.reserve(_needsUpdate.size());
+        for(size_t i = 0; i < _needsUpdate.size(); ++i)
+            requests.push_back({
+                VARS::CF_PLOTS_BUCKET,
+                fmt::format("{:x}.dat", _needsUpdate[i]),
+                _updateFlags[i].metadataOnly
+            });
 
-    auto updates = co_await _cfCli->getManyR2Objects(requests);
+        updates = co_await _cfCli->getManyR2Objects(std::move(requests));
+    }
      
     // set new plot data
     for (size_t i = 0; i < _needsUpdate.size(); ++i) {

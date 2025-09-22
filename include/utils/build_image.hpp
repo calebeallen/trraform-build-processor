@@ -2,15 +2,16 @@
 
 #include <vector>
 #include <cstdint>
+#include <cmath>
 
 namespace BuildImage {
 
     inline constexpr size_t IMG_WIDTH = 1024;
     inline constexpr size_t IMG_HEIGHT = 1024;
 
-    inline constexpr float CAMERA_THETA = 0.0f;
-    inline constexpr float CAMERA_PHI = 0.0f;
-    inline constexpr float CAMERA_R_SCALAR = 0.0f;
+    inline constexpr float CAMERA_THETA = M_PI*0.25f;
+    inline constexpr float CAMERA_PHI = M_PI*0.5f;
+    inline constexpr float CAMERA_R_SCALAR = 2.5f;
 
     inline constexpr float FOV = 70.0f;
     inline constexpr float NEAR = 1.0f;

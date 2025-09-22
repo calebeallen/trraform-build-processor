@@ -92,7 +92,7 @@ asio::awaitable<void> processChunk(
 
         const auto chunkIdParts = ChunkData::parseChunkIdStr(chunkId);
         bool isBaseChunk = chunkId[0] == 'l' && std::get<0>(chunkIdParts) == 2;
-        std::shared_ptr<ChunkData> chunk;
+        std::unique_ptr<ChunkData> chunk;
 
         if (chunkId[0] != 'l' || isBaseChunk) {
 
@@ -135,7 +135,9 @@ asio::awaitable<void> processChunk(
                     std::string token;
                     
                     while (std::getline(ss, token, ' ')) {
-                        if (token == VARS::REDIS_FLAG_SET_DEFAULT_JSON)
+                        if (token == VARS::REDIS_FLAG_METADATA_ONLY)
+                            updateflags[i].metadataOnly = true;
+                        else if (token == VARS::REDIS_FLAG_SET_DEFAULT_JSON)
                             updateflags[i].setDefaultJson = true;
                         else if (token == VARS::REDIS_FLAG_SET_DEFAULT_BUILD)
                             updateflags[i].setDefaultBuild = true;
@@ -146,25 +148,25 @@ asio::awaitable<void> processChunk(
             }
 
             if (isBaseChunk)
-                chunk = std::make_shared<BaseChunk>(chunkId, std::move(needsUpdate), std::move(updateflags), cfCli);
+                chunk = std::make_unique<BaseChunk>(chunkId, std::move(needsUpdate), std::move(updateflags), cfCli);
             else
-                chunk = std::make_shared<DChunk>(chunkId, std::move(needsUpdate), std::move(updateflags), cfCli);
+                chunk = std::make_unique<DChunk>(chunkId, std::move(needsUpdate), std::move(updateflags), cfCli);
 
         } else
-            chunk = std::make_shared<LChunk>(chunkId, std::move(needsUpdate), cfCli);
+            chunk = std::make_unique<LChunk>(chunkId, std::move(needsUpdate), cfCli);
 
 
         // pipeline
         co_await chunk->prep();
 
         std::cout << "prepped" << std::endl;
-        co_return;
 
         // process chunk on thread pool
-        co_await asio::co_spawn(pool.get_executor(), [chunk]() -> asio::awaitable<void> {
+        co_await asio::co_spawn(pool.get_executor(), [&chunk]() mutable -> asio::awaitable<void> {
             chunk->process();
             co_return;
         }, asio::use_awaitable);
+        co_return;
 
         const auto nextChunkId = co_await chunk->update();
         if (nextChunkId) {

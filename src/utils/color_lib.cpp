@@ -7,10 +7,10 @@
 #include "utils/color_lib.hpp"
 #include "config/config.hpp"
 
-static cv::Vec3f lerp(const cv::Vec3f& a, const cv::Vec3f& b, const float alpha) {
+static cv::Vec3f lerp(const cv::Vec3f& a, const cv::Vec3f& b, const float t) {
 
     cv::Vec3f c;
-    cv::addWeighted(a, alpha, b, 1.0 - alpha, 0.0, c);
+    cv::addWeighted(a, 1.0f - t, b, t, 0.0, c);
     return c;
 
 }   
@@ -22,7 +22,6 @@ std::optional<cv::Mat> ColorLib::getColor(const size_t idx) {
     static const cv::Mat palette = []() {
 
         constexpr int HPB = 8;
-        constexpr int HUES = HPB*6;
         constexpr int GS = 25;
         constexpr int GS2 = GS*GS;
 
@@ -74,12 +73,10 @@ std::optional<cv::Mat> ColorLib::getColor(const size_t idx) {
 
 }
 
-std::optional<cv::Vec3f> ColorLib::getColorAsVec(const size_t idx) {
-
-    const auto& m = getColor(idx);
+std::optional<cv::Vec3f> ColorLib::getColorAsVec(size_t idx) {
+    auto m = getColor(idx);
     if (!m)
         return std::nullopt;
-
-    return m->at<cv::Vec3f>(0, 0);
-
+    const float* p = m->ptr<float>(0);
+    return cv::Vec3f(p[0], p[1], p[2]);
 }

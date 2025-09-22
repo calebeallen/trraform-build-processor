@@ -15,7 +15,7 @@ LChunk::LChunk(
     std::string chunkId, 
     std::vector<std::uint64_t> needsUpdate, 
     std::shared_ptr<CFAsyncClient> cfCli
-) : ChunkData(chunkId, std::move(needsUpdate), cfCli) {}
+) : ChunkData(std::move(chunkId), std::move(needsUpdate), std::move(cfCli)) {}
 
 asio::awaitable<void> LChunk::prep(){
 
@@ -27,28 +27,34 @@ asio::awaitable<void> LChunk::prep(){
     auto locId = std::get<1>(idParts);
     const std::vector<int>& childIds = getMappedFwd(layer, locId);
 
-    std::vector<std::string> keys;
-    keys.reserve(childIds.size());
-    for (const auto cid : childIds)
-        keys.emplace_back(makeChunkIdStr(layer + 1, cid, true));
+    
+    std::vector<GetOutcome> results;
+    {
+        std::vector<GetParams> requests;
+        requests.reserve(childIds.size());
+        for (const auto id : childIds)
+            requests.push_back({
+                VARS::CF_POINT_CLOUDS_BUCKET,
+                makeChunkIdStr(layer + 1, id, true) + ".dat"
+            });
 
-    const auto res = co_await _cfCli->getManyR2Objects(VARS::CF_POINT_CLOUDS_BUCKET, keys);
+        results = co_await _cfCli->getManyR2Objects(std::move(requests));
+    }
 
     for (size_t i = 0; i < childIds.size(); ++i) {
         const auto id = childIds[i];
-        const auto& out = res[i];
+        const auto& obj = results[i];
 
-        // object must exist UNCOMMENT BELOW!!
-        // if (out.err)
-        //     throw std::runtime_error(out.errMsg);
+        if (obj.err)
+            throw std::runtime_error(obj.errMsg);
         
         // read rows header 4 bytes
         std::uint32_t rows;
-        std::memcpy(&rows, out.body.data(), sizeof(std::uint32_t));
+        std::memcpy(&rows, obj.body.data(), sizeof(std::uint32_t));
 
         // create matrix
         cv::Mat pointCloud(rows, 6, CV_32F);
-        std::memcpy(pointCloud.data, out.body.data() + sizeof(std::uint32_t), pointCloud.total() * pointCloud.elemSize());
+        std::memcpy(pointCloud.data, obj.body.data() + sizeof(std::uint32_t), pointCloud.total() * pointCloud.elemSize());
 
         _pointClouds[id] = std::move(pointCloud);
     }

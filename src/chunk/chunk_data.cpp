@@ -138,17 +138,17 @@ const std::tuple<int,int> ChunkData::parseChunkIdStr(const std::string& id){
 }
 
 ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate, std::shared_ptr<CFAsyncClient> cfCli) {
-    _chunkId = chunkId;
+    _chunkId = std::move(chunkId);
     _needsUpdate = std::move(needsUpdate);
-    _cfCli = cfCli;
+    _cfCli = std::move(cfCli);
 };
 
 asio::awaitable<void> ChunkData::downloadParts() {
 
-    auto obj = co_await _cfCli->getR2Object({ 
+    auto obj = co_await _cfCli->getR2Object(
         VARS::CF_CHUNKS_BUCKET, 
         _chunkId + ".dat" 
-    });
+    );
     
     if (obj.err) {
         std::cout << "ChunkId: " << _chunkId << ": " << obj.errMsg << std::endl;
@@ -202,12 +202,12 @@ asio::awaitable<void> ChunkData::uploadParts(){
         i += partLen;
     }
 
-    auto out = co_await _cfCli->putR2Object({
+    auto out = co_await _cfCli->putR2Object(
         VARS::CF_CHUNKS_BUCKET, 
         _chunkId + ".dat", 
         "application/octet-stream", 
         std::move(data) 
-    });
+    );
 
     if (out.err)
         throw std::runtime_error(out.errMsg);

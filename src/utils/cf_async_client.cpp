@@ -56,16 +56,20 @@ CFAsyncClient::~CFAsyncClient() {
     Aws::ShutdownAPI(_s3CliOpts);
 }
 
-asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(const GetParams& params) const {
+asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(
+    const std::string& bucket, 
+    const std::string& key
+) const {
 
     GetOutcome obj;
 
     co_await asio::async_initiate<decltype(asio::use_awaitable), void()>(
-        [this, &params, &obj](auto&& handler) mutable {
-            Aws::S3::Model::GetObjectRequest req;
-            req.SetBucket(params.bucket);
-            req.SetKey(params.key);
+        [this, &bucket, &key, &obj](auto&& handler) mutable {
 
+            Aws::S3::Model::GetObjectRequest req;
+            req.SetBucket(bucket);
+            req.SetKey(key);
+           
             // make handler copyable
             using HandlerT = std::decay_t<decltype(handler)>;
             std::shared_ptr<HandlerT> hptr = std::make_shared<HandlerT>(std::move(handler));
@@ -74,11 +78,11 @@ asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(const GetParams& params) 
                 [hptr, &obj](
                     const Aws::S3::S3Client*,
                     const Aws::S3::Model::GetObjectRequest&,
-                    const Aws::S3::Model::GetObjectOutcome& awsOut,
+                    const Aws::S3::Model::GetObjectOutcome& out,
                     const std::shared_ptr<const Aws::Client::AsyncCallerContext>&
                 ) mutable {
-                    if (awsOut.IsSuccess()) {
-                        const auto& res = awsOut.GetResult();
+                    if (out.IsSuccess()) {
+                        const auto& res = out.GetResult();
                         for (const auto& [k, v] : res.GetMetadata())
                             obj.metadata.emplace(k, v);
 
@@ -87,14 +91,14 @@ asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(const GetParams& params) 
                         obj.body.assign(std::istreambuf_iterator<char>(body), std::istreambuf_iterator<char>());        
                     } else {
                         obj.err = true;
-                        const auto& err = awsOut.GetError();
+                        const auto& err = out.GetError();
                         obj.errType = err.GetErrorType();
                         obj.errMsg = "R2 GetObject error: " + err.GetMessage();
                     }
                     
                     asio::post(
                         asio::get_associated_executor(*hptr), 
-                        [hptr]() mutable { (*hptr)();}
+                        [hptr]() mutable {(*hptr)();}
                     );
                 }
             );
@@ -107,16 +111,20 @@ asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(const GetParams& params) 
 }
 
 
-asio::awaitable<GetOutcome> CFAsyncClient::headR2Object(const GetParams& params) const {
+asio::awaitable<GetOutcome> CFAsyncClient::headR2Object(
+    const std::string& bucket,
+    const std::string& key
+) const {
 
     GetOutcome obj;
 
     co_await asio::async_initiate<decltype(asio::use_awaitable), void()>(
-        [this, &params, &obj](auto&& handler) mutable {
-            Aws::S3::Model::HeadObjectRequest req;
-            req.SetBucket(params.bucket);
-            req.SetKey(params.key);
+        [this, &bucket, &key, &obj](auto&& handler) mutable {
 
+            Aws::S3::Model::HeadObjectRequest req;
+            req.SetBucket(bucket);
+            req.SetKey(key);
+           
             // make handler copyable
             using HandlerT = std::decay_t<decltype(handler)>;
             std::shared_ptr<HandlerT> hptr = std::make_shared<HandlerT>(std::move(handler));
@@ -154,27 +162,31 @@ asio::awaitable<GetOutcome> CFAsyncClient::headR2Object(const GetParams& params)
 }
 
 
-
-asio::awaitable<PutOutcome> CFAsyncClient::putR2Object(const PutParams& params) const {
+asio::awaitable<PutOutcome> CFAsyncClient::putR2Object(
+    const std::string& bucket,
+    const std::string& key,
+    const std::string& contentType,
+    const std::vector<uint8_t> data
+) const {
 
     PutOutcome obj;
 
     co_await asio::async_initiate<decltype(asio::use_awaitable), void()>(
-        [this, &params, &obj](auto&& handler) mutable {
+        [this, &bucket, &key, &contentType, &data, &obj](auto&& handler) mutable {
             Aws::S3::Model::PutObjectRequest req;
-            req.SetBucket(params.bucket);
-            req.SetKey(params.key);
+            req.SetBucket(bucket);
+            req.SetKey(key);
 
             // Build body
             auto body = Aws::MakeShared<Aws::StringStream>("PutR2ObjectBody");
             body->write(
-                reinterpret_cast<const char*>(params.data.data()), 
-                static_cast<std::streamsize>(params.data.size())
+                reinterpret_cast<const char*>(data.data()), 
+                static_cast<std::streamsize>(data.size())
             );
             body->seekg(0);
             req.SetBody(body);
-            req.SetContentLength(static_cast<long long>(params.data.size()));
-            req.SetContentType(params.contentType);
+            req.SetContentLength(static_cast<long long>(data.size()));
+            req.SetContentType(contentType);
 
             auto exe = asio::get_associated_executor(handler);
 
@@ -211,7 +223,7 @@ asio::awaitable<PutOutcome> CFAsyncClient::putR2Object(const PutParams& params) 
     co_return obj;
 }
 
-asio::awaitable<std::vector<GetOutcome>> CFAsyncClient::getManyR2Objects(const std::vector<GetParams>& requests) const {
+asio::awaitable<std::vector<GetOutcome>> CFAsyncClient::getManyR2Objects(const std::vector<GetParams> requests) const {
 
     auto exe = co_await asio::this_coro::executor;
     asio::experimental::channel<void(boost::system::error_code, int)> channel(exe, requests.size());
@@ -222,7 +234,11 @@ asio::awaitable<std::vector<GetOutcome>> CFAsyncClient::getManyR2Objects(const s
         asio::co_spawn(
             exe,
             [this, i, &requests, &channel, &results]() -> asio::awaitable<void> {
-                results[i] = co_await getR2Object(requests[i]);
+                const auto& params = requests[i];
+                if (params.headOnly)
+                    results[i] = co_await headR2Object(params.bucket, params.key);
+                else
+                    results[i] = co_await getR2Object(params.bucket, params.key);
                 co_await channel.async_send({}, 0, asio::use_awaitable);
             },
             asio::detached
@@ -236,7 +252,7 @@ asio::awaitable<std::vector<GetOutcome>> CFAsyncClient::getManyR2Objects(const s
     co_return results;
 }
 
-asio::awaitable<std::vector<PutOutcome>> CFAsyncClient::putManyR2Objects(const std::vector<PutParams>& requests) const {
+asio::awaitable<std::vector<PutOutcome>> CFAsyncClient::putManyR2Objects(const std::vector<PutParams> requests) const {
 
     auto exe = co_await asio::this_coro::executor;
     asio::experimental::channel<void(boost::system::error_code, int)> channel(exe, requests.size());
@@ -247,7 +263,8 @@ asio::awaitable<std::vector<PutOutcome>> CFAsyncClient::putManyR2Objects(const s
         asio::co_spawn(
             exe,
             [this, i, &requests, &channel, &results]() -> asio::awaitable<void> {
-                results[i] = co_await putR2Object(requests[i]);
+                const auto& params = requests[i];
+                results[i] = co_await putR2Object(params.bucket, params.key, params.contentType, std::move(params.data));
                 co_await channel.async_send({}, 0, asio::use_awaitable);
             },
             asio::detached
