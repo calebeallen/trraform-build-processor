@@ -10,10 +10,11 @@
 
 #include "config/config.hpp"
 #include "chunk/l_chunk.hpp"
+#include "utils/color_lib.hpp"
 
 LChunk::LChunk(
     std::string chunkId, 
-    std::vector<uint64_t> needsUpdate, 
+    std::vector<std::string> needsUpdate, 
     std::shared_ptr<CFAsyncClient> cfCli
 ) : ChunkData(std::move(chunkId), std::move(needsUpdate), std::move(cfCli)) {}
 
@@ -56,10 +57,9 @@ asio::awaitable<void> LChunk::prep(){
         cv::Mat pointCloud(n, 3, CV_32F);
         std::vector<uint16_t> colidxs(n);
         const size_t matSize = pointCloud.total() * pointCloud.elemSize();
-        uint16_t* data = obj.body.data() + sizeof(uint32_t);
 
-        std::memcpy(pointCloud.data, data, matSize);
-        std::memcpy(colidxs.data(), data + matSize, sizeof(uint16_t) * n);
+        std::memcpy(pointCloud.data, obj.body.data() + sizeof(uint32_t), matSize);
+        std::memcpy(colidxs.data(),  obj.body.data() + sizeof(uint32_t) + matSize, sizeof(uint16_t) * n);
 
         _pointClouds.emplace(id, {
             std::move(pointCloud),
@@ -73,25 +73,26 @@ void LChunk::process(){
 
     // compute low-resolution representations of the chunk
     for (const auto& locId : _needsUpdate) {
-        cv::Mat& points = _pointClouds[locId];
-        const size_t n = points.rows;
+        const PointCloud& pointCloud = _pointClouds[locId];
+        const cv::Mat& pnts = pointCloud.points;
+        const size_t n = pnts.rows;
 
-        if(n < 2)
+        if(pnts.rows < 2)
             continue;
 
         // compute bounds of point cloud
-        cv::Mat xyz = points.colRange(0,3).clone();
         cv::Mat min, max;
-        cv::reduce(xyz, min, 0, cv::REDUCE_MIN);
-        cv::reduce(xyz, max, 0, cv::REDUCE_MAX);
+        cv::reduce(pnts, min, 0, cv::REDUCE_MIN);
+        cv::reduce(pnts, max, 0, cv::REDUCE_MAX);
 
         // normalize points
-        for (int c = 0; c < 3; ++c) {
-            float m = min.at<float>(0,c);
-            float r = max.at<float>(0,c) - m;
+        cv::Mat pntsNorm = pnts.clone();
+        for (int i = 0; i < 3; ++i) {
+            float m = min.at<float>(0,i);
+            float r = max.at<float>(0,i) - m;
             if (r > 1e-6f) {
-                xyz.col(c) -= m;
-                xyz.col(c) /= r;
+                pntsNorm.col(i) -= m;
+                pntsNorm.col(i) /= r;
             }
         }
 
@@ -102,7 +103,7 @@ void LChunk::process(){
 
         cv::Mat labels, centers;
         cv::kmeans(
-            xyz, k, labels,
+            pntsNorm, k, labels,
             cv::TermCriteria(
                 cv::TermCriteria::EPS+cv::TermCriteria::MAX_ITER, 
                 VARS::KMEANS_MAX_ITERS, 
@@ -112,32 +113,34 @@ void LChunk::process(){
 
         // compute bounding boxes, encode into uint8 buffer
         std::vector<cv::Vec3f> mean(k, {0,0,0}), m2(k, {0,0,0}), color(k, {0,0,0});
-        std::vector<int> count(k, 0);
+        std::vector<float> count(k, 0);
         for (size_t i = 0; i < n; ++i) {
-            size_t cl = labels.at<size_t>(i);
-            const float* p = points.ptr<float>(i);
-            ++count[cl];
+            size_t cl = labels.at<int>(i);
+            const float* p = pnts.ptr<float>(i);
+            count[cl] += 1.0f;
 
-            for (size_t c = 0; c < 3; ++c) {
-                float x = p[c];
-                float delta = x - mean[cl][c];
-                mean[cl][c] += delta / count[cl];
-                float delta2 = x - mean[cl][c];
-                m2[cl][c] += delta * delta2;
-                color[cl][c] += p[c + 3];
+            cv::Vec3f col = *ColorLib::getColorAsVec(pointCloud.colidxs[i]);
+
+            for (size_t j = 0; j < 3; ++j) {
+                float x = p[j];
+                float delta = x - mean[cl][j];
+                mean[cl][j] += delta / count[cl];
+                float delta2 = x - mean[cl][j];
+                m2[cl][j] += delta * delta2;
+                color[cl][j] += col[j];
             }   
         }
 
         // encode boxes into buffer
-        std::vector<uint8_t> buf;
+        std::vector<uint8_t> buf(9*k*sizeof(float));
         for (size_t i = 0; i < k; ++i) {
-            const int clusterSize = count[i];
+            const float clusterSize = count[i];
             if (clusterSize == 0)
                 continue;
 
             cv::Vec3f stddev;
-            for (size_t c = 0; c < 3; ++c)
-                stddev[c] = clusterSize > 1 ? std::sqrt(m2[i][c] / (clusterSize - 1)) : 0.0f;
+            for (size_t j = 0; j < 3; ++j)
+                stddev[j] = clusterSize > 1.0f ? std::sqrt(m2[i][j] / (clusterSize - 1)) : 0.0f;
 
             float arr[9]{
                 mean[i][0] - stddev[0], mean[i][1] - stddev[1], mean[i][2] - stddev[2],
@@ -145,8 +148,7 @@ void LChunk::process(){
                 color[i][0] / clusterSize, color[i][1] / clusterSize, color[i][2] / clusterSize,
             };
 
-            const uint8_t* bytes = reinterpret_cast<const uint8_t*>(arr);
-            buf.insert(buf.end(), bytes, bytes + sizeof(arr));
+            std::memcpy(buf.data() + i*9*sizeof(float), &arr[0], sizeof(float)*9);
         }
 
         _parts[locId] = std::move(buf);

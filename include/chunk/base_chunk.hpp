@@ -10,8 +10,8 @@
 class BaseChunk : public DChunk {
 
 public:
-    BaseChunk(std::string, std::vector<uint64_t>, std::vector<UpdateFlags>, std::shared_ptr<CFAsyncClient>);
+    BaseChunk(std::string, std::vector<std::string>, std::vector<UpdateFlags>, std::shared_ptr<CFAsyncClient>);
 
-    boost::asio::awaitable< std::optional<std::string>> update() override;
+    boost::asio::awaitable<std::optional<std::string>> update() override;
 
 };

@@ -22,7 +22,7 @@ namespace asio = boost::asio;
 
 DChunk::DChunk(
     std::string chunkId, 
-    std::vector<uint64_t> needsUpdate, 
+    std::vector<std::string> needsUpdate, 
     std::vector<UpdateFlags> updateFlags, 
     std::shared_ptr<CFAsyncClient> cfCli
 ) : ChunkData(std::move(chunkId), std::move(needsUpdate), std::move(cfCli)) {

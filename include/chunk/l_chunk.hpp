@@ -13,15 +13,15 @@
 struct PointCloud {
     cv::Mat points;
     std::vector<uint16_t> colidxs;
-}
+};
 
 class LChunk : public ChunkData {
 
 private:
-    std::unordered_map<uint64_t, PointCloud> _pointClouds;
+    std::unordered_map<std::string, PointCloud> _pointClouds;
 
 public:
-    LChunk(std::string, std::vector<uint64_t>, std::shared_ptr<CFAsyncClient>);
+    LChunk(std::string, std::vector<std::string>, std::shared_ptr<CFAsyncClient>);
 
     boost::asio::awaitable<void> prep() override;
     void process() override;

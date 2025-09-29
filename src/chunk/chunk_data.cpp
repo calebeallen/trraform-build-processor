@@ -137,10 +137,10 @@ const std::tuple<int,int> ChunkData::parseChunkIdStr(const std::string& id){
 
 }
 
-ChunkData::ChunkData(std::string chunkId, std::vector<std::uint64_t> needsUpdate, std::shared_ptr<CFAsyncClient> cfCli) {
+ChunkData::ChunkData(std::string chunkId, std::vector<std::string> needsUpdate, std::shared_ptr<CFAsyncClient> cfCli) {
     _chunkId = std::move(chunkId);
     _needsUpdate = std::move(needsUpdate);
-    _cfCli = std::move(cfCli);
+    _cfCli = cfCli;
 };
 
 asio::awaitable<void> ChunkData::downloadParts() {

@@ -55,8 +55,7 @@ asio::awaitable<void> processChunk(
     try {
         // pop chunk from queue, get children that need update
         std::string chunkId;
-        std::vector<std::string> needsUpdateStrs;
-        std::vector<std::uint64_t> needsUpdate;
+        std::vector<std::string> needsUpdate;
         {
             static const std::string script = R"(
                 local chunkId = redis.call('RPOP', KEYS[1])
@@ -82,12 +81,9 @@ asio::awaitable<void> processChunk(
             chunkId = result[0];
 
             needsUpdate.reserve(result.size() - 1);
-            needsUpdateStrs.reserve(result.size() - 1);
-            for (size_t i = 1; i < result.size(); ++i) {
-                needsUpdate.push_back(std::stoll(result[i], nullptr, 16));
-                needsUpdateStrs.push_back(std::move(result[i]));
-            }
-                
+            for (size_t i = 1; i < result.size(); ++i)
+                needsUpdate.push_back(std::move(result[i]));
+    
         }
 
         const auto chunkIdParts = ChunkData::parseChunkIdStr(chunkId);
@@ -98,8 +94,8 @@ asio::awaitable<void> processChunk(
 
             // make update flag keys
             std::vector<std::string> getFlagsKeys;
-            for (const auto &plotId : needsUpdateStrs)
-                getFlagsKeys.push_back(VARS::REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + plotId);
+            for (const auto &id : needsUpdate)
+                getFlagsKeys.push_back(VARS::REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + id);
 
             // get update flags
             std::vector<std::optional<std::string>> flagStrs;
@@ -128,7 +124,7 @@ asio::awaitable<void> processChunk(
             }
 
             // parse update flag strings
-            std::vector<UpdateFlags> updateflags(needsUpdateStrs.size());
+            std::vector<UpdateFlags> updateflags(needsUpdate.size());
             for (size_t i = 0; i < updateflags.size(); ++i) {
                 if (flagStrs[i]) {
                     std::stringstream ss(*flagStrs[i]);

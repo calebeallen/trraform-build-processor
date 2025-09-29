@@ -22,14 +22,13 @@ class DChunk : public ChunkData {
 
 protected:
     std::vector<std::optional<std::vector<uint8_t>>> _updatedImages;
-
     std::vector<UpdateFlags> _updateFlags;
    
     asio::awaitable<void> downloadPlotUpdates();
     asio::awaitable<void> uploadImages();
 
 public:
-    DChunk(std::string, std::vector<uint64_t>, std::vector<UpdateFlags>, std::shared_ptr<CFAsyncClient>);
+    DChunk(std::string, std::vector<std::string>, std::vector<UpdateFlags>, std::shared_ptr<CFAsyncClient>);
     virtual ~DChunk() = default;
 
     virtual asio::awaitable<void> prep() override;

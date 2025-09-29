@@ -19,7 +19,7 @@
 
 BaseChunk::BaseChunk(
     std::string chunkId, 
-    std::vector<std::uint64_t> needsUpdate, 
+    std::vector<std::string> needsUpdate, 
     std::vector<UpdateFlags> updateFlags,
     std::shared_ptr<CFAsyncClient> cfCli
 ) : DChunk(std::move(chunkId), std::move(needsUpdate), std::move(updateFlags), std::move(cfCli)) {}

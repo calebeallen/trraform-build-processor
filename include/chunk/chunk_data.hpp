@@ -15,8 +15,8 @@ namespace asio = boost::asio;
 class ChunkData {
 
 protected:
-    std::unordered_map<uint64_t,std::vector<uint8_t>> _parts; 
-    std::vector<uint64_t> _needsUpdate;
+    std::unordered_map<std::string, std::vector<uint8_t>> _parts; 
+    std::vector<std::string> _needsUpdate;
     std::string _chunkId;
     std::shared_ptr<CFAsyncClient> _cfCli;
 
@@ -29,7 +29,7 @@ public:
     static std::string makeChunkIdStr(const int, const int, const bool);
     static const std::tuple<int,int> parseChunkIdStr(const std::string&);
 
-    ChunkData(std::string, std::vector<uint64_t>, std::shared_ptr<CFAsyncClient>);
+    ChunkData(std::string, std::vector<std::string>, std::shared_ptr<CFAsyncClient>);
     virtual ~ChunkData() = default;
 
     virtual asio::awaitable<void> prep() = 0;
