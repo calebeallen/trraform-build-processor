@@ -24,11 +24,6 @@ protected:
     asio::awaitable<void> uploadParts();
 
 public:
-    static const std::vector<int>& getMappedFwd(const int, const int);
-    static uint32_t getMappedBwd(const int, const int);
-    static std::string makeChunkIdStr(const int, const int, const bool);
-    static const std::tuple<int,int> parseChunkIdStr(const std::string&);
-
     ChunkData(std::string, std::vector<std::string>, std::shared_ptr<CFAsyncClient>);
     virtual ~ChunkData() = default;
 

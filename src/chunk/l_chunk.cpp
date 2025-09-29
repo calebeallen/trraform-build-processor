@@ -10,6 +10,7 @@
 
 #include "config/config.hpp"
 #include "chunk/l_chunk.hpp"
+#include "chunk/chunk.hpp"
 #include "utils/color_lib.hpp"
 
 LChunk::LChunk(
@@ -186,17 +187,22 @@ asio::awaitable<std::optional<std::string>> LChunk::update() {
     cv::Mat pointCloud;
     cv::vconcat(samples, pointCloud);
 
-    const std::uint32_t rows = pointCloud.rows;
-    const size_t size = pointCloud.total() * pointCloud.elemSize();
-    std::vector<std::uint8_t> data(sizeof(std::uint32_t) + size);
-    std::memcpy(data.data(), &rows, sizeof(std::uint32_t));
-    std::memcpy(data.data() + sizeof(std::uint32_t), pointCloud.data, size);
+    const uint32_t n = points.size();
+    const size_t matSize = pointCloud.total() * pointCloud.elemSize();
+    const size_t colSize = points.size() * sizeof(uint16_t);
+ 
+    std::vector<uint8_t> buf;
+    buf.reserve(sizeof(uint32_t) + matSize + colSize);
+
+    std::memcpy(buf.data(), &n, sizeof(uint32_t));
+    std::memcpy(buf.data() + sizeof(uint32_t), pointCloud.data, matSize);
+    std::memcpy(buf.data() + sizeof(uint32_t) + matSize, colidxs.data(), colSize);
 
     auto out = co_await _cfCli->putR2Object(
         VARS::CF_POINT_CLOUDS_BUCKET,
         _chunkId + ".dat",
         "application/octet-stream",
-        data
+        buf
     );
     if (out.err)
         throw std::runtime_error(out.errMsg);

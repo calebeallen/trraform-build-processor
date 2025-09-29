@@ -1,12 +1,35 @@
-
+#include <sstream>
 #include <fstream>
 #include <array>
 #include <vector>
+#include <utility>
+#include <cstdint>
 
-#include "chunk/chunk_map.hpp"
+#include <fmt/format.h>
+
+#include "chunk/chunk.hpp"
 #include "config/config.hpp"
 
-const std::vector<uint32_t>& ChunkMap::fwd(int layer, size_t idx) {
+std::string Chunk::makeIdStr(const uint64_t idl, const uint64_t idr, const bool isLayer){
+    return fmt::format("{}{:x}_{:x}", isLayer ? "l":"", idl, idr);
+}
+
+std::pair<uint64_t,uint64_t> Chunk::parseIdStr(const std::string& id){
+
+    std::istringstream ss(id);
+    std::string idlHex, idrHex;
+    getline(ss, idlHex, '_');
+    getline(ss, idrHex, '_');
+
+    // for low res chunks remove layer prefix
+    if(idlHex[0] == 'l')
+        idlHex.erase(0,1);
+       
+    return std::pair<uint64_t,uint64_t>(stoll(idlHex, nullptr, 16), stoll(idrHex, nullptr, 16));
+
+}
+
+const std::vector<uint32_t>& Chunk::mapFwd(int layer, size_t idx) {
 
     if(layer == 0){
         static const std::vector<uint32_t> map = []() {
@@ -59,7 +82,8 @@ const std::vector<uint32_t>& ChunkMap::fwd(int layer, size_t idx) {
     throw std::runtime_error("Invalid layer");
 }
 
-uint32_t bwd(int layer, size_t idx) {
+uint32_t Chunk::mapBwd(int layer, size_t idx) {
+
     if (layer == 0)
         return 0;
     
@@ -101,7 +125,7 @@ uint32_t bwd(int layer, size_t idx) {
     throw std::runtime_error("Invalid layer");
 }
 
-uint32_t plotIdToPosIdx(uint32_t idx) {
+uint32_t Chunk::plotIdToPosIdx(uint32_t idx) {
 
     static const std::array<uint32_t, VARS::L2_SIZE> map = []() {
         std::array<uint32_t, VARS::L2_SIZE> map;
@@ -120,4 +144,5 @@ uint32_t plotIdToPosIdx(uint32_t idx) {
     }();
 
     return map[idx];
+
 }
