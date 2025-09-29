@@ -35,41 +35,41 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update() {
 
     for (auto& [plotId, part] : _parts) {
         const auto buildData = Plot::getBuildPart(part);
-        const int bs = buildData[1];
 
-        std::vector<std::tuple<int,int>> vox;
-        int idx = 0, col;
-        const size_t bdLen = buildData.size();
-        for (size_t i = 2; i < bdLen; ++i) {
+        // extract non-empty block position and color indices
+        std::vector<std::pair<int,int>> build;
+        int posidx = 0, colidx;
+        for (size_t i = 2; i < buildData.size(); ++i) {
             int val = buildData[i] >> 1;
             if (buildData[i] & 1) {
-                col = val;
-                if (col > VARS::PLOT_COUNT)
-                    vox.emplace_back(idx, col);
-                ++idx;
+                colidx = val;
+                if (colidx > VARS::PLOT_COUNT)
+                    build.emplace_back(posidx, colidx);
+                ++posidx;
             } else {
-                if (col > VARS::PLOT_COUNT) {
+                if (colidx > VARS::PLOT_COUNT)
                     for(int j = 0; j < val; ++j)
-                        vox.emplace_back(idx+j, col);
-                }
-                idx += val;
+                        build.emplace_back(posidx+j, colidx);
+    
+                posidx += val;
             }
         }
 
-        if (!vox.size())
+        if (!build.size())
             continue;
             
-        size_t sampleCount = std::max(1ul, (size_t)(static_cast<float>(vox.size()) * VARS::PC_SAMPLE_PERC));
-        std::shuffle(vox.begin(), vox.end(), rng);
+        const size_t sampleCount = std::max(1ul, static_cast<size_t>(static_cast<float>(build.size()) * VARS::PC_SAMPLE_PERC));
+        std::shuffle(build.begin(), build.end(), rng);
 
-        int worldPosIdx = getMappedBwd(2, plotId);
-        cv::Mat worldPos(1, 3, CV_32F, Utils::idxToVec3(worldPosIdx, VARS::MAIN_BUILD_SIZE).val);
+        const uint32_t worldPosIdx = getMappedBwd(2, plotId);
+        const cv::Mat worldPos(1, 3, CV_32F, Utils::idxToVec3(worldPosIdx, VARS::MAIN_BUILD_SIZE).val);
+        const uint16_t buildSize = buildData[1];
 
         for (size_t i = 0; i < sampleCount; ++i) {
-            cv::Mat pos(1, 3, CV_32F, Utils::idxToVec3(std::get<0>(vox[i]), bs).val);
-            cv::Mat col(*ColorLib::getColor(std::get<1>(vox[i])));
+            cv::Mat pos(1, 3, CV_32F, Utils::idxToVec3(build[i].first, buildSize).val);
+            cv::Mat col(*ColorLib::getColor(build[i].second));
             pos += 0.5f;
-            pos /= bs;
+            pos /= buildSize;
             pos += worldPos;
             points.push_back(std::move(pos));
         }
@@ -78,9 +78,6 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update() {
     cv::Mat pointCloud;
     cv::vconcat(points, pointCloud);
 
-    
-
- 
     // write to file
     const std::string fname = "/point_clouds/" + _chunkId + ".dat";
     std::ofstream file(fname, std::ios::binary);  

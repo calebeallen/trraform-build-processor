@@ -25,7 +25,7 @@ protected:
 
 public:
     static const std::vector<int>& getMappedFwd(const int, const int);
-    static int getMappedBwd(const int, const int);
+    static uint32_t getMappedBwd(const int, const int);
     static std::string makeChunkIdStr(const int, const int, const bool);
     static const std::tuple<int,int> parseChunkIdStr(const std::string&);
 

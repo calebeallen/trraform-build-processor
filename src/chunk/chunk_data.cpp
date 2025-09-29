@@ -18,20 +18,20 @@
 #include "config/config.hpp"
 #include "chunk/chunk_data.hpp"
 
-int ChunkData::getMappedBwd(const int layer, const int locId){
+uint32_t ChunkData::getMappedBwd(const int layer, const int locId){
 
-    if(layer == 0)
+    if (layer == 0)
         return 0;
     
-    if(layer == 1){
-        static const std::array<int, VARS::L1_SIZE> map = []() {
-            std::array<int, VARS::L1_SIZE> map;
+    if (layer == 1) {
+        static const std::array<uint32_t, VARS::L1_SIZE> map = []() {
+            std::array<uint32_t, VARS::L1_SIZE> map;
             std::ifstream file("static/cmap_l1.dat", std::ios::binary);
             if (!file) 
                 throw std::runtime_error("Failed to open cmap_l1.dat");
 
-            int buf[2];
-            while (file.read(reinterpret_cast<char*>(buf), sizeof(buf))) {
+            uint32_t buf[2];
+            while (file.read(reinterpret_cast<char*>(buf), sizeof(uint32_t))) {
                 map[buf[1]] = buf[0];
             }
 
@@ -40,15 +40,15 @@ int ChunkData::getMappedBwd(const int layer, const int locId){
         return map[locId];
     }
 
-    if(layer == 2){
-        static const std::array<int, VARS::L2_SIZE> map = []() {
-            std::array<int, VARS::L2_SIZE> map;
+    if (layer == 2) {
+        static const std::array<uint32_t, VARS::L2_SIZE> map = []() {
+            std::array<uint32_t, VARS::L2_SIZE> map;
             std::ifstream file("static/cmap_l2.dat", std::ios::binary);
             if (!file) 
                 throw std::runtime_error("Failed to open cmap_l2.dat");
 
-            int buf[2];
-            while (file.read(reinterpret_cast<char*>(buf), sizeof(buf))) {
+            uint32_t buf[2];
+            while (file.read(reinterpret_cast<char*>(buf), sizeof(uint32_t))) {
                 map[buf[1]] = buf[0];
             }
 
@@ -178,7 +178,7 @@ asio::awaitable<void> ChunkData::downloadParts() {
 
 }
 
-asio::awaitable<void> ChunkData::uploadParts(){
+asio::awaitable<void> ChunkData::uploadParts() {
 
     // encode parts
     size_t size = 0;

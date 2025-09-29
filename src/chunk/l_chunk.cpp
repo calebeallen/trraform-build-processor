@@ -13,7 +13,7 @@
 
 LChunk::LChunk(
     std::string chunkId, 
-    std::vector<std::uint64_t> needsUpdate, 
+    std::vector<uint64_t> needsUpdate, 
     std::shared_ptr<CFAsyncClient> cfCli
 ) : ChunkData(std::move(chunkId), std::move(needsUpdate), std::move(cfCli)) {}
 
@@ -49,14 +49,22 @@ asio::awaitable<void> LChunk::prep(){
             throw std::runtime_error(obj.errMsg);
         
         // read rows header 4 bytes
-        std::uint32_t rows;
-        std::memcpy(&rows, obj.body.data(), sizeof(std::uint32_t));
+        uint32_t n;
+        std::memcpy(&n, obj.body.data(), sizeof(uint32_t));
 
         // create matrix
-        cv::Mat pointCloud(rows, 6, CV_32F);
-        std::memcpy(pointCloud.data, obj.body.data() + sizeof(std::uint32_t), pointCloud.total() * pointCloud.elemSize());
+        cv::Mat pointCloud(n, 3, CV_32F);
+        std::vector<uint16_t> colidxs(n);
+        const size_t matSize = pointCloud.total() * pointCloud.elemSize();
+        uint16_t* data = obj.body.data() + sizeof(uint32_t);
 
-        _pointClouds[id] = std::move(pointCloud);
+        std::memcpy(pointCloud.data, data, matSize);
+        std::memcpy(colidxs.data(), data + matSize, sizeof(uint16_t) * n);
+
+        _pointClouds.emplace(id, {
+            std::move(pointCloud),
+            std::move(colidxs)
+        });
     }
 
 }

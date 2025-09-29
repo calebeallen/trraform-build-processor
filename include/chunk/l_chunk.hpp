@@ -1,5 +1,6 @@
 #pragma once
 
+#include <vector>
 #include <unordered_map>
 #include <string>
 #include <cstdint>
@@ -9,10 +10,15 @@
 
 #include "chunk/chunk_data.hpp"
 
+struct PointCloud {
+    cv::Mat points;
+    std::vector<uint16_t> colidxs;
+}
+
 class LChunk : public ChunkData {
 
 private:
-    std::unordered_map<uint64_t,cv::Mat> _pointClouds;
+    std::unordered_map<uint64_t, PointCloud> _pointClouds;
 
 public:
     LChunk(std::string, std::vector<uint64_t>, std::shared_ptr<CFAsyncClient>);

@@ -166,7 +166,6 @@ asio::awaitable<void> processChunk(
             chunk->process();
             co_return;
         }, asio::use_awaitable);
-        co_return;
 
         const auto nextChunkId = co_await chunk->update();
         if (nextChunkId) {

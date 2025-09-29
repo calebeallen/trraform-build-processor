@@ -22,7 +22,7 @@ namespace asio = boost::asio;
 
 DChunk::DChunk(
     std::string chunkId, 
-    std::vector<std::uint64_t> needsUpdate, 
+    std::vector<uint64_t> needsUpdate, 
     std::vector<UpdateFlags> updateFlags, 
     std::shared_ptr<CFAsyncClient> cfCli
 ) : ChunkData(std::move(chunkId), std::move(needsUpdate), std::move(cfCli)) {
@@ -102,7 +102,7 @@ asio::awaitable<void> DChunk::uploadImages() {
 
     std::vector<PutParams> requests; 
 
-    for (size_t i = 0; i < _needsUpdate.size(); i++) {
+    for (size_t i = 0; i < _needsUpdate.size(); ++i) {
         const auto& imgData = _updatedImages[i];
         if (!imgData) 
             continue;
