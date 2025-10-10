@@ -22,9 +22,9 @@
 #include "chunk/chunk_data.hpp"
 #include "config/config.hpp"
 #include "chunk/chunk_data.hpp"
-#include "chunk/base_chunk.hpp"
-#include "chunk/d_chunk.hpp"
-#include "chunk/l_chunk.hpp"
+#include "chunk/types/base_chunk.hpp"
+#include "chunk/types/d_chunk.hpp"
+#include "chunk/types/l_chunk.hpp"
 #include "utils/cf_async_client.hpp"
 #include "utils/utils.hpp"
 
@@ -46,9 +46,9 @@ static std::atomic<bool> killf = false;
 
 asio::awaitable<void> processChunk(
     redis::connection& redisCli,
-    std::shared_ptr<CFAsyncClient> cfCli,
-    asio::thread_pool& pool, 
-    std::shared_ptr<int> inFlight
+    const std::shared_ptr<const CFAsyncClient> cfCli,
+    const asio::thread_pool& pool, 
+    const std::shared_ptr<int> inFlight
 ) {
     InFlightGuard ifg(inFlight);
 
@@ -259,7 +259,7 @@ int main() {
     asio::thread_pool pool(std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1));
 
     // init Cloudflare helper
-    std::shared_ptr<CFAsyncClient> cfCli = std::make_shared<CFAsyncClient>(
+    std::shared_ptr<const CFAsyncClient> cfCli = std::make_shared<CFAsyncClient>(
         "https://1534f5e1cce37d41a018df4c9716751e.r2.cloudflarestorage.com",
         std::getenv("CF_R2_ACCESS_KEY"),
         std::getenv("CF_R2_SECRET_KEY"),

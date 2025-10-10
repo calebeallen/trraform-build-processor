@@ -9,26 +9,17 @@
 #include <cpr/cpr.h>
 #include <boost/asio/awaitable.hpp>
 
-#include "chunk/base_chunk.hpp"
+#include "chunk/types/base_chunk.hpp"
 #include "config/config.hpp"
 #include "utils/color_lib.hpp"
 #include "utils/utils.hpp"
 #include "utils/plot.hpp"
-#include "utils/cf_async_client.hpp"
 #include "chunk/chunk.hpp"
 
+asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_ptr<const CFAsyncClient> cfCli) {
 
-BaseChunk::BaseChunk(
-    std::string chunkId, 
-    std::vector<std::string> needsUpdate, 
-    std::vector<UpdateFlags> updateFlags,
-    std::shared_ptr<CFAsyncClient> cfCli
-) : DChunk(std::move(chunkId), std::move(needsUpdate), std::move(updateFlags), std::move(cfCli)) {}
-
-asio::awaitable<std::optional<std::string>> BaseChunk::update() {
-
-    co_await uploadParts();
-    co_await uploadImages();
+    co_await uploadParts(cfCli);
+    co_await uploadImages(cfCli);
 
     // sample points for parent chunk to use
     std::mt19937 rng{std::random_device{}()};
@@ -93,7 +84,7 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update() {
     std::memcpy(buf.data() + sizeof(uint32_t), pointCloud.data, matSize);
     std::memcpy(buf.data() + sizeof(uint32_t) + matSize, colidxs.data(), colSize);
 
-    auto out = co_await _cfCli->putR2Object(
+    auto out = co_await cfCli->putR2Object(
         VARS::CF_POINT_CLOUDS_BUCKET,
         _chunkId + ".dat",
         "application/octet-stream",

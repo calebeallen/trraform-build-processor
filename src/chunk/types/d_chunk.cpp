@@ -12,7 +12,7 @@
 #include <boost/asio/awaitable.hpp>
 #include <fmt/format.h>
 
-#include "chunk/d_chunk.hpp"
+#include "chunk/types/d_chunk.hpp"
 #include "config/config.hpp"
 #include "utils/build_image.hpp"
 #include "utils/plot.hpp"
@@ -20,18 +20,7 @@
 
 namespace asio = boost::asio;
 
-DChunk::DChunk(
-    std::string chunkId, 
-    std::vector<std::string> needsUpdate, 
-    std::vector<UpdateFlags> updateFlags, 
-    std::shared_ptr<CFAsyncClient> cfCli
-) : ChunkData(std::move(chunkId), std::move(needsUpdate), std::move(cfCli)) {
-
-    _updateFlags = std::move(updateFlags);
-
-}
-
-asio::awaitable<void> DChunk::downloadPlotUpdates() {
+asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<const CFAsyncClient> cfCli) {
 
     // pull updates
     std::vector<GetOutcome> updates;
@@ -45,7 +34,7 @@ asio::awaitable<void> DChunk::downloadPlotUpdates() {
                 _updateFlags[i].metadataOnly
             });
 
-        updates = co_await _cfCli->getManyR2Objects(std::move(requests));
+        updates = co_await cfCli->getManyR2Objects(std::move(requests));
     }
      
     // set new plot data
@@ -98,7 +87,7 @@ asio::awaitable<void> DChunk::downloadPlotUpdates() {
     }
 }
 
-asio::awaitable<void> DChunk::uploadImages() {
+asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<const CFAsyncClient> cfCli) const {
 
     std::vector<PutParams> requests; 
 
@@ -115,18 +104,16 @@ asio::awaitable<void> DChunk::uploadImages() {
         });
     }
 
-    const auto results = co_await _cfCli->putManyR2Objects(requests);
+    const auto results = co_await cfCli->putManyR2Objects(requests);
     for (const auto& res : results)
         if (res.err)
             throw std::runtime_error(res.errMsg);
 
 }
 
-asio::awaitable<void> DChunk::prep() {
-
-    co_await downloadParts();
-    co_await downloadPlotUpdates();
-
+asio::awaitable<void> DChunk::prep(const std::shared_ptr<const CFAsyncClient> cfCli) {
+    co_await downloadParts(cfCli);
+    co_await downloadPlotUpdates(cfCli);
 }
 
 void DChunk::process() {
@@ -146,10 +133,8 @@ void DChunk::process() {
 
 }
 
-asio::awaitable<std::optional<std::string>> DChunk::update() {
-
-    co_await uploadParts();
-    co_await uploadImages();
+asio::awaitable<std::optional<std::string>> DChunk::update(const std::shared_ptr<const CFAsyncClient> cfCli) {
+    co_await uploadParts(cfCli);
+    co_await uploadImages(cfCli);
     co_return std::nullopt;
-
 }

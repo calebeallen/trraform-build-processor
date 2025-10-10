@@ -17,135 +17,23 @@
 
 #include "config/config.hpp"
 #include "chunk/chunk_data.hpp"
+#include "chunk/chunk.hpp"
+#include "utils/cf_async_client.hpp"
 
-uint32_t ChunkData::getMappedBwd(const int layer, const int locId){
-
-    if (layer == 0)
-        return 0;
-    
-    if (layer == 1) {
-        static const std::array<uint32_t, VARS::L1_SIZE> map = []() {
-            std::array<uint32_t, VARS::L1_SIZE> map;
-            std::ifstream file("static/cmap_l1.dat", std::ios::binary);
-            if (!file) 
-                throw std::runtime_error("Failed to open cmap_l1.dat");
-
-            uint32_t buf[2];
-            while (file.read(reinterpret_cast<char*>(buf), sizeof(uint32_t))) {
-                map[buf[1]] = buf[0];
-            }
-
-            return map;
-        }();
-        return map[locId];
+ChunkData::ChunkData(
+    std::string chunkId, 
+    std::vector<std::string> needsUpdate
+): _chunkId(std::move(chunkId)), _needsUpdateStr(std::move(needsUpdate)) {
+    _needsUpdate.reserve(_needsUpdateStr.size());
+    for (const auto& s :_needsUpdateStr) {
+        const auto id = Chunk::parseIdStr(s);
+        _needsUpdate.push_back(id.second);
     }
-
-    if (layer == 2) {
-        static const std::array<uint32_t, VARS::L2_SIZE> map = []() {
-            std::array<uint32_t, VARS::L2_SIZE> map;
-            std::ifstream file("static/cmap_l2.dat", std::ios::binary);
-            if (!file) 
-                throw std::runtime_error("Failed to open cmap_l2.dat");
-
-            uint32_t buf[2];
-            while (file.read(reinterpret_cast<char*>(buf), sizeof(uint32_t))) {
-                map[buf[1]] = buf[0];
-            }
-
-            return map;
-        }();
-        return map[locId];
-    }
-
-    throw std::runtime_error("Invalid layer");
-
 }
 
-// map from parent id -> child ids
-const std::vector<int>& ChunkData::getMappedFwd(const int layer, const int locId){
+asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<const CFAsyncClient> cfCli, bool keepAll) {
 
-    if(layer == 0){
-        static const std::vector<int> entry = []() {
-            std::vector<int> map;
-            for(int i = 0; i < VARS::L0_SIZE; ++i)
-                map.push_back(i);
-            return map;
-        }();
-        return entry;
-    }
-
-    if(layer == 1){
-        static const std::array<std::vector<int>, VARS::L0_SIZE> map = []() {
-            std::array<std::vector<int>, VARS::L0_SIZE> map;
-
-            std::ifstream file("static/cmap_l1.dat", std::ios::binary);
-            if (!file) 
-                throw std::runtime_error("Failed to open cmap_l1.dat");
-
-            int buf[2];
-            while (file.read(reinterpret_cast<char*>(buf), sizeof(buf))) {
-                map[buf[0]].push_back(buf[1]);
-            }
-
-            return map;
-        }();
-        return map[locId];
-    }
-    
-    if(layer == 2){
-        static const std::array<std::vector<int>, VARS::L1_SIZE> map = []() {
-            std::array<std::vector<int>, VARS::L1_SIZE> map;
-
-            std::ifstream file("static/cmap_l2.dat", std::ios::binary);
-            if (!file) 
-                throw std::runtime_error("Failed to open cmap_l2.dat");
-
-            int buf[2];
-            int plotId = 1;
-            while (file.read(reinterpret_cast<char*>(buf), sizeof(buf))) {
-                map[buf[0]].push_back(plotId);
-                plotId++;
-            }
-
-            return map;
-        }();
-        return map[locId];
-    }
-        
-    throw std::runtime_error("Invalid layer");
-
-}
-
-std::string ChunkData::makeChunkIdStr(const int idl, const int idr, const bool layer){
-
-    return fmt::format("{}{:x}_{:x}", layer ? "l":"", idl, idr);
-
-}
-
-const std::tuple<int,int> ChunkData::parseChunkIdStr(const std::string& id){
-
-    std::istringstream ss(id);
-    std::string idlHex, idrHex;
-    getline(ss, idlHex, '_');
-    getline(ss, idrHex, '_');
-
-    // for low res chunks remove layer prefix
-    if(idlHex[0] == 'l')
-        idlHex.erase(0,1);
-       
-    return std::tuple<int,int>(stoi(idlHex, nullptr, 16), stoi(idrHex, nullptr, 16));
-
-}
-
-ChunkData::ChunkData(std::string chunkId, std::vector<std::string> needsUpdate, std::shared_ptr<CFAsyncClient> cfCli) {
-    _chunkId = std::move(chunkId);
-    _needsUpdate = std::move(needsUpdate);
-    _cfCli = cfCli;
-};
-
-asio::awaitable<void> ChunkData::downloadParts() {
-
-    auto obj = co_await _cfCli->getR2Object(
+    auto obj = co_await cfCli->getR2Object(
         VARS::CF_CHUNKS_BUCKET, 
         _chunkId + ".dat" 
     );
@@ -157,36 +45,38 @@ asio::awaitable<void> ChunkData::downloadParts() {
         co_return;
     }
     
-    // decode into parts
-    size_t i = 0;
+    std::unordered_set<uint64_t> nuSet(_needsUpdate.begin(), _needsUpdate.end());
+    
+    size_t i = 2; // first 2 bytes reserved
     while (i < obj.body.size()) {
         // read id (64 bit int little endian)
-        std::uint64_t id;
+        uint64_t id;
         std::memcpy(&id, obj.body.data() + i, sizeof(std::uint64_t));
         i += 8;
 
         // read part len metadata (32 bit int little endian)
-        std::uint32_t partLen;
-        std::memcpy(&partLen, obj.body.data() + i, sizeof(std::uint32_t));
+        uint32_t partLen;
+        std::memcpy(&partLen, obj.body.data() + i, sizeof(uint32_t));
         i += 4;
 
-        std::vector<std::uint8_t> part(obj.body.begin() + i, obj.body.begin() + i + partLen);
+        // if keep all false, only keep items that do not need update
+        if (keepAll || (!keepAll && !nuSet.contains(id))) {
+            std::vector<uint8_t> part(partLen);
+            std::memcpy(part.data(), obj.body.data() + i, partLen);
+            _parts.emplace(id, std::move(part));
+        }
         i += partLen;
-
-        _parts.emplace(id, std::move(part));
     }
-
 }
 
-asio::awaitable<void> ChunkData::uploadParts() {
-
+asio::awaitable<void> ChunkData::uploadParts(const std::shared_ptr<const CFAsyncClient> cfCli) const {
     // encode parts
-    size_t size = 0;
+    size_t size = 2; // reserve first 2 bytes (version)
     for(auto& [key, part] : _parts)
         size += 12 + part.size();
 
     std::vector<uint8_t> data(size);
-    size_t i = 0;
+    size_t i = 2; // first two bytes reserved
     for(auto& [id, part] : _parts){
         // set id
         std::memcpy(data.data() + i, &id, sizeof(uint64_t));
@@ -202,7 +92,7 @@ asio::awaitable<void> ChunkData::uploadParts() {
         i += partLen;
     }
 
-    auto out = co_await _cfCli->putR2Object(
+    auto out = co_await cfCli->putR2Object(
         VARS::CF_CHUNKS_BUCKET, 
         _chunkId + ".dat", 
         "application/octet-stream", 

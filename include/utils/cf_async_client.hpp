@@ -52,11 +52,15 @@ public:
     CFAsyncClient(const std::string&, const std::string&, const std::string&, const std::string&);
     ~CFAsyncClient();
     
-    asio::awaitable<GetOutcome> getR2Object(const std::string&, const std::string&) const;
-    asio::awaitable<GetOutcome> headR2Object(const std::string&, const std::string&) const;
-    asio::awaitable<PutOutcome> putR2Object(const std::string&, const std::string&, const std::string&, const std::vector<uint8_t>) const;
-    asio::awaitable<std::vector<GetOutcome>> getManyR2Objects(const std::vector<GetParams>) const;
-    asio::awaitable<std::vector<PutOutcome>> putManyR2Objects(const std::vector<PutParams>) const;
-    void purgeCache(const std::vector<std::string>&) const;
+    asio::awaitable<GetOutcome> getR2Object(const std::string& bucket, const std::string& key) const;
+    asio::awaitable<GetOutcome> headR2Object(const std::string& bucket, const std::string& key) const;
+    asio::awaitable<PutOutcome> putR2Object(
+        const std::string& bucket, 
+        const std::string& key,
+        const std::string& contentType,
+        const std::vector<uint8_t> data
+    ) const;
+    asio::awaitable<std::vector<GetOutcome>> getManyR2Objects(const std::vector<GetParams> requests) const;
+    asio::awaitable<std::vector<PutOutcome>> putManyR2Objects(const std::vector<PutParams> requests) const;
 
 };

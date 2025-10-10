@@ -8,6 +8,13 @@
 
 namespace Plot {
 
+    struct UpdateFlags {
+        bool metadataOnly = false;
+        bool setDefaultJson = false;
+        bool setDefaultBuild = false;
+        bool noImageUpdate = false;
+    };
+
     nlohmann::json getDefaultJsonPart();
     std::span<const std::uint8_t> getDefaultBuildData();
 
