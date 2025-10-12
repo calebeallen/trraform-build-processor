@@ -22,10 +22,12 @@
 #include "chunk/chunk_data.hpp"
 #include "config/config.hpp"
 #include "chunk/chunk_data.hpp"
+#include "chunk/chunk.hpp"
 #include "chunk/types/base_chunk.hpp"
 #include "chunk/types/d_chunk.hpp"
 #include "chunk/types/l_chunk.hpp"
 #include "utils/cf_async_client.hpp"
+#include "utils/plot.hpp"
 #include "utils/utils.hpp"
 
 namespace redis = boost::redis;
@@ -47,7 +49,7 @@ static std::atomic<bool> killf = false;
 asio::awaitable<void> processChunk(
     redis::connection& redisCli,
     const std::shared_ptr<const CFAsyncClient> cfCli,
-    const asio::thread_pool& pool, 
+    asio::thread_pool& pool, 
     const std::shared_ptr<int> inFlight
 ) {
     InFlightGuard ifg(inFlight);
@@ -86,7 +88,7 @@ asio::awaitable<void> processChunk(
     
         }
 
-        const auto chunkIdParts = ChunkData::parseChunkIdStr(chunkId);
+        const auto chunkIdParts = Chunk::parseIdStr(chunkId);
         bool isBaseChunk = chunkId[0] == 'l' && std::get<0>(chunkIdParts) == 2;
         std::unique_ptr<ChunkData> chunk;
 
@@ -124,7 +126,7 @@ asio::awaitable<void> processChunk(
             }
 
             // parse update flag strings
-            std::vector<UpdateFlags> updateflags(needsUpdate.size());
+            std::vector<Plot::UpdateFlags> updateflags(needsUpdate.size());
             for (size_t i = 0; i < updateflags.size(); ++i) {
                 if (flagStrs[i]) {
                     std::stringstream ss(*flagStrs[i]);
@@ -144,16 +146,16 @@ asio::awaitable<void> processChunk(
             }
 
             if (isBaseChunk)
-                chunk = std::make_unique<BaseChunk>(chunkId, std::move(needsUpdate), std::move(updateflags), cfCli);
+                chunk = std::make_unique<BaseChunk>(chunkId, std::move(needsUpdate), std::move(updateflags));
             else
-                chunk = std::make_unique<DChunk>(chunkId, std::move(needsUpdate), std::move(updateflags), cfCli);
+                chunk = std::make_unique<DChunk>(chunkId, std::move(needsUpdate), std::move(updateflags));
 
         } else
             chunk = std::make_unique<LChunk>(chunkId, std::move(needsUpdate), cfCli);
 
 
         // pipeline
-        co_await chunk->prep();
+        co_await chunk->prep(cfCli);
 
         std::cout << "prepped" << std::endl;
 
@@ -163,7 +165,7 @@ asio::awaitable<void> processChunk(
             co_return;
         }, asio::use_awaitable);
 
-        const auto nextChunkId = co_await chunk->update();
+        const auto nextChunkId = co_await chunk->update(cfCli);
         if (nextChunkId) {
             static const std::string script = R"(
                 local chunkId = ARGV[1]
@@ -200,7 +202,7 @@ asio::awaitable<void> processChunk(
 
 asio::awaitable<void> loop(
     redis::connection& redisCli,
-    std::shared_ptr<CFAsyncClient> cfCli,
+    std::shared_ptr<const CFAsyncClient> cfCli,
     asio::thread_pool& pool
 ) {
     auto exec = co_await asio::this_coro::executor;
@@ -259,7 +261,7 @@ int main() {
     asio::thread_pool pool(std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1));
 
     // init Cloudflare helper
-    std::shared_ptr<const CFAsyncClient> cfCli = std::make_shared<CFAsyncClient>(
+    std::shared_ptr<const CFAsyncClient> cfCli = std::make_shared<const CFAsyncClient>(
         "https://1534f5e1cce37d41a018df4c9716751e.r2.cloudflarestorage.com",
         std::getenv("CF_R2_ACCESS_KEY"),
         std::getenv("CF_R2_SECRET_KEY"),

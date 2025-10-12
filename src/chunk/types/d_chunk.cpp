@@ -112,8 +112,10 @@ asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<const CFAsyncCl
 }
 
 asio::awaitable<void> DChunk::prep(const std::shared_ptr<const CFAsyncClient> cfCli) {
-    co_await downloadParts(cfCli);
+
+    co_await downloadParts(cfCli, true);
     co_await downloadPlotUpdates(cfCli);
+    
 }
 
 void DChunk::process() {

@@ -78,6 +78,9 @@ asio::awaitable<void> LChunk::prep(const std::shared_ptr<const CFAsyncClient> cf
 
         _pointClouds.try_emplace(_needsUpdate[i], std::move(points), std::move(colors));
     }
+
+    // save updated point cloud (not modified from here)
+    co_await uploadPointCloud(cfCli);
 }
 
 void LChunk::process(){
@@ -170,13 +173,14 @@ void LChunk::process(){
 asio::awaitable<std::optional<std::string>> LChunk::update(const std::shared_ptr<const CFAsyncClient> cfCli) {
 
     co_await uploadParts(cfCli);
-    co_await uploadPointCloud(cfCli);
 
     // create parent chunk id for update
     const auto [layer, locId] = Chunk::parseIdStr(_chunkId);
+    if (layer == 0)
+        co_return std::nullopt;
+
     const int nextLocId = Chunk::mapBwd(layer - 1, locId);
     co_return Chunk::makeIdStr(1, nextLocId, true);
-
 }
 
 boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<const CFAsyncClient> cfCli) {
@@ -190,7 +194,7 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<co
 
     /*
         Format
-        | 2 bytes reserved | header (uint64_t arr) | points (float arr) | coloridxs (uint16_t arr) |
+        | 2 bytes reserved | headerlen (4 bytes) |  header (uint64_t arr) | numpoints (4 bytes) | points (float arr) | coloridxs (uint16_t arr) |
         header: | len (uint32_t)| content: list of ids and their corresponding content's offset and len (ex: [1,120,32]) |
     */
 
