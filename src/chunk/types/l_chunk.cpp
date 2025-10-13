@@ -181,6 +181,10 @@ asio::awaitable<std::optional<std::string>> LChunk::update(const std::shared_ptr
     co_return Chunk::makeIdStr(layer - 1, nextLocId, true);
 }
 
+constexpr size_t PC_ENCODED_HEADER_ENTRY_SIZE = sizeof(uint64_t) + sizeof(uint32_t);
+constexpr size_t VEC3F_SIZE = sizeof(float) * 3;
+constexpr size_t COLOR_IDX_SIZE = sizeof(uint16_t);
+
 boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<const CFAsyncClient> cfCli) {
 
     auto obj = co_await cfCli->getR2Object(VARS::CF_POINT_CLOUDS_BUCKET, _chunkId); 
@@ -190,47 +194,42 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<co
         co_return;
     }
 
-    /*
-        Format
-        | 2 bytes reserved | headerlen (4 bytes) |  header (uint64_t arr) | numpoints (4 bytes) | points (float arr) | coloridxs (uint16_t arr) |
-        header: | len (uint32_t)| content: list of ids and their corresponding content's offset and len (ex: [1,120,32]) |
-    */
+    // format: | total entries | total points | header: [id,len] | points | color indices
+    uint8_t* headerPtr = obj.body.data() + 2;
+    uint32_t totalEntries, totalPoints;
+    std::memcpy(&totalEntries, headerPtr, sizeof(uint32_t));
+    headerPtr += sizeof(uint32_t);
+    std::memcpy(&totalPoints, headerPtr, sizeof(uint32_t));
+    headerPtr += sizeof(uint32_t);
 
-    const uint32_t headerStart = 2 + sizeof(uint32_t);
-    uint32_t headerLen;
-    std::memcpy(&headerLen, obj.body.data() + 2, sizeof(uint32_t));
-    const uint32_t headerEnd = headerStart + headerLen;
-
-    uint32_t numPoints;
-    std::memcpy(&numPoints, obj.body.data() + headerStart + headerLen, sizeof(uint32_t));
-
-    const uint32_t pointsStart = headerStart + headerLen + sizeof(uint32_t);
-    const uint32_t colorsStart = pointsStart + numPoints * sizeof(float) * 3;
-
+    uint8_t* pntptr = headerPtr + totalEntries*PC_ENCODED_HEADER_ENTRY_SIZE;
+    uint8_t* colptr = pntptr + totalPoints*VEC3F_SIZE;
+    
     // only keep parts that do not need update
     std::unordered_set<uint64_t> nuSet(_needsUpdate.begin(), _needsUpdate.end());
 
-    size_t i = headerStart;
-    while (i < headerEnd) {
+    for (size_t i = 0; i < totalEntries; ++i) {
         uint64_t id;
-        std::memcpy(&id, obj.body.data() + i, sizeof(uint64_t));
+        std::memcpy(&id, headerPtr, sizeof(uint64_t));
+        headerPtr += sizeof(uint64_t);
+        uint32_t n;
+        std::memcpy(&n, headerPtr, sizeof(uint32_t));
+        headerPtr += sizeof(uint32_t);
 
         // TODO skip if item in needs update
         if(!nuSet.contains(id)) {
-            uint32_t offset, len;
-            std::memcpy(&offset, obj.body.data() + i + sizeof(uint64_t), sizeof(uint32_t));
-            std::memcpy(&len, obj.body.data() + i + sizeof(uint64_t) + sizeof(uint32_t), sizeof(uint32_t));
-
             // create matrix
-            cv::Mat points(len, 3, CV_32F);
-            std::vector<uint16_t> colidxs(len);
+            cv::Mat points(n, 3, CV_32F);
+            std::vector<uint16_t> colidxs(n);
 
-            std::memcpy(points.data, obj.body.data() + pointsStart + points.elemSize() * offset * 3, points.total() * points.elemSize());
-            std::memcpy(colidxs.data(), obj.body.data() + colorsStart + sizeof(uint16_t) * offset, sizeof(uint16_t)*len);
+            std::memcpy(points.data, pntptr, n * VEC3F_SIZE);
+            std::memcpy(colidxs.data(), colptr, n * COLOR_IDX_SIZE);
 
             _pointClouds.try_emplace(id, std::move(points), std::move(colidxs));
         }
-        i += PC_ENCODED_HEADER_ENTRY_SIZE;
+
+        pntptr += n * VEC3F_SIZE;
+        colptr += n * COLOR_IDX_SIZE;
     }
 }
 
@@ -239,44 +238,44 @@ boost::asio::awaitable<void> LChunk::uploadPointCloud(const std::shared_ptr<cons
     if (_pointClouds.size() == 0)
         co_return;
 
-    // allocate space for header + reserved
-    uint32_t headerLen = _pointClouds.size() * PC_ENCODED_HEADER_ENTRY_SIZE;
-    std::vector<uint8_t> buf(headerLen + sizeof(uint32_t) + 2);
-    std::memcpy(buf.data() + 2, &headerLen, sizeof(uint32_t));
+    uint32_t totalEntries = _pointClouds.size();
+    uint32_t totalPoints = 0;
+    for (const auto& [_, pointCloud] : _pointClouds)
+        totalPoints += pointCloud.points.rows;
 
-    uint32_t pointOffset = 0;
-    uint32_t i = 2 + sizeof(uint32_t);
+    // allocate buffer, write len prefixes
+    std::vector<uint8_t> buf(2 + 2*sizeof(uint32_t) + totalEntries*PC_ENCODED_HEADER_ENTRY_SIZE + totalPoints*(VEC3F_SIZE + COLOR_IDX_SIZE));
+    buf[0] = buf[1] = 0;
 
+    uint8_t* headptr = buf.data() + 2;
+    std::memcpy(headptr, &totalEntries, sizeof(uint32_t));
+    headptr += sizeof(uint32_t);
+    std::memcpy(headptr, &totalPoints, sizeof(uint32_t));
+    headptr += sizeof(uint32_t);
+
+    uint8_t* pntptr = headptr + totalEntries*PC_ENCODED_HEADER_ENTRY_SIZE;
+    uint8_t* colptr = pntptr + totalPoints*VEC3F_SIZE;
+
+    // write data
     for (const auto& [id, pointCloud] : _pointClouds) {
-        uint32_t numPoints = pointCloud.points.rows;
-        std::memcpy(buf.data() + i, &id, sizeof(uint64_t));
-        i += sizeof(uint64_t);
-        std::memcpy(buf.data() + i, &pointOffset, sizeof(uint32_t));
-        i += sizeof(uint32_t);
-        std::memcpy(buf.data() + i, &numPoints, sizeof(uint32_t));
-        i += sizeof(uint32_t);
-        pointOffset += numPoints;
-    }
+        std::memcpy(headptr, &id, sizeof(uint64_t));
+        headptr += sizeof(uint64_t);
+        uint32_t n = pointCloud.points.rows;
+        std::memcpy(headptr, &n, sizeof(uint32_t));
+        headptr += sizeof(uint32_t);
 
-    // allocate space for numpoints prefix and body (points and color idxs)
-    buf.resize(buf.size() + sizeof(uint32_t) + sizeof(float)*3*pointOffset + sizeof(uint16_t)*pointOffset);
-    std::memcpy(buf.data() + i, &pointOffset, sizeof(uint32_t));
-    uint32_t pointsStart = i + sizeof(uint32_t);
-    uint32_t colorsStart = pointsStart + sizeof(float)*3*pointOffset;
-    i = 0;
-
-    for (const auto& [_, pointCloud] : _pointClouds) {
         std::memcpy(
-            buf.data() + pointsStart + i * pointCloud.points.elemSize() * 3, 
+            pntptr, 
             pointCloud.points.data, 
-            pointCloud.points.total() * pointCloud.points.elemSize()
+            n * VEC3F_SIZE
         );
         std::memcpy(
-            buf.data() + colorsStart + i * sizeof(uint16_t),
+            colptr,
             pointCloud.colidxs.data(),
-            pointCloud.colidxs.size() * sizeof(uint16_t)
+            n * COLOR_IDX_SIZE
         );
-        i += pointCloud.points.rows;
+        pntptr += n * VEC3F_SIZE;
+        colptr += n * COLOR_IDX_SIZE;
     }
 
     auto out = co_await cfCli->putR2Object(

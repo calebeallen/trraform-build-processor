@@ -15,8 +15,6 @@ struct PointCloud {
     std::vector<uint16_t> colidxs;
 };
 
-constexpr size_t PC_ENCODED_HEADER_ENTRY_SIZE = sizeof(uint64_t) + 2*sizeof(uint32_t);
-
 class LChunk : public virtual ChunkData {
 
 protected:
