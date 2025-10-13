@@ -24,7 +24,7 @@
 #include <aws/s3/S3Client.h>
 #include <nlohmann/json.hpp>
 
-#include "utils/cf_async_client.hpp"
+#include "async/cf_async_client.hpp"
 #include "config/config.hpp"
 
 CFAsyncClient::CFAsyncClient(

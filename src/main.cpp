@@ -18,6 +18,7 @@
 #include <boost/redis/request.hpp>
 #include <boost/redis/adapter/adapt.hpp>
 #include <boost/asio/ip/tcp.hpp>  
+#include <fmt/format.h>
 
 #include "chunk/chunk_data.hpp"
 #include "config/config.hpp"
@@ -26,7 +27,7 @@
 #include "chunk/types/base_chunk.hpp"
 #include "chunk/types/d_chunk.hpp"
 #include "chunk/types/l_chunk.hpp"
-#include "utils/cf_async_client.hpp"
+#include "async/cf_async_client.hpp"
 #include "utils/plot.hpp"
 #include "utils/utils.hpp"
 
@@ -34,7 +35,6 @@ namespace redis = boost::redis;
 namespace asio = boost::asio;
 
 using namespace std::chrono_literals;  
-
 
 class InFlightGuard {
 private:
@@ -87,12 +87,13 @@ asio::awaitable<void> processChunk(
                 needsUpdate.push_back(std::move(result[i]));
     
         }
+        
+        std::cout << "Chunk " << chunkId << std::endl;
 
-        const auto chunkIdParts = Chunk::parseIdStr(chunkId);
-        bool isBaseChunk = chunkId[0] == 'l' && std::get<0>(chunkIdParts) == 2;
+        const auto splitId = Chunk::parseIdStr(chunkId);
         std::unique_ptr<ChunkData> chunk;
 
-        if (chunkId[0] != 'l' || isBaseChunk) {
+        if (chunkId[0] != 'l' || (chunkId[0] == 'l' && splitId.first == 2)) {
 
             // make update flag keys
             std::vector<std::string> getFlagsKeys;
@@ -145,20 +146,17 @@ asio::awaitable<void> processChunk(
                 }
             }
 
-            if (isBaseChunk)
+            if (splitId.first == 2) {
                 chunk = std::make_unique<BaseChunk>(chunkId, std::move(needsUpdate), std::move(updateflags));
-            else
+            } else
                 chunk = std::make_unique<DChunk>(chunkId, std::move(needsUpdate), std::move(updateflags));
 
         } else
-            chunk = std::make_unique<LChunk>(chunkId, std::move(needsUpdate), cfCli);
+            chunk = std::make_unique<LChunk>(chunkId, std::move(needsUpdate));
 
 
         // pipeline
         co_await chunk->prep(cfCli);
-
-        std::cout << "prepped" << std::endl;
-
         // process chunk on thread pool
         co_await asio::co_spawn(pool.get_executor(), [&chunk]() mutable -> asio::awaitable<void> {
             chunk->process();
@@ -187,12 +185,14 @@ asio::awaitable<void> processChunk(
                 script, 
                 "0", 
                 *nextChunkId,
-                chunkId,
+                fmt::format("{:x}", splitId.second),
                 VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX,
                 VARS::REDIS_UPDATE_QUEUE_PREFIX
             );
             co_await redisCli.async_exec(req, res, asio::use_awaitable); 
         }
+
+        std::cout << "done" << std::endl;
 
     } catch (const std::exception& e) {
         std::cerr << "[ex] " << e.what() << "\n";
@@ -276,8 +276,8 @@ int main() {
     cfg.password = std::getenv("REDIS_PASSWORD");
 
     boost::redis::logger lg(boost::redis::logger::level::emerg);
-    redis::connection redisCli(ioc);
-    redisCli.async_run(cfg, lg, asio::detached);
+    redis::connection redisCli(ioc, lg);
+    redisCli.async_run(cfg, asio::detached);
 
     // handle sigint sigterm
     asio::signal_set signals(ioc, SIGINT, SIGTERM);

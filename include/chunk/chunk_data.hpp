@@ -8,7 +8,7 @@
 
 #include <boost/asio/awaitable.hpp>
 
-#include "utils/cf_async_client.hpp"
+#include "async/cf_async_client.hpp"
 
 namespace asio = boost::asio;
 
@@ -16,9 +16,9 @@ class ChunkData {
 
 protected:
     std::unordered_map<uint64_t, std::vector<uint8_t>> _parts;
-    std::vector<std::string> _needsUpdateStr;
     std::vector<uint64_t> _needsUpdate;
     std::string _chunkId;
+    uint64_t _idl, _idr;
 
     asio::awaitable<void> downloadParts(const std::shared_ptr<const CFAsyncClient> cfCli, bool keepAll = false);
     asio::awaitable<void> uploadParts(const std::shared_ptr<const CFAsyncClient> cfCli) const;

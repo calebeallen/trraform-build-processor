@@ -1,0 +1,27 @@
+{
+  "configurations": [
+    {
+      "name": "Linux",
+      "compilerPath": "/usr/bin/g++",
+      "cStandard": "c23",
+      "cppStandard": "c++26",
+      "intelliSenseMode": "linux-gcc-x64",
+
+      // Use compile_commands.json from your CMake preset build
+      "compileCommands": "${workspaceFolder}/build/debug/compile_commands.json",
+
+    //   // Fallback includes (used only if compile_commands.json is missing)
+    //   "includePath": [
+    //     "${workspaceFolder}/include",
+    //     "${workspaceFolder}/vcpkg_installed/x64-linux/include",
+    //     "${workspaceFolder}/vcpkg_installed/x64-linux/include/opencv4",
+    //     "/usr/include",
+    //     "/usr/local/include"
+    //   ],
+
+      // Optional: if you use macros
+      "defines": []
+    }
+  ],
+  "version": 4
+}

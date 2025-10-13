@@ -1,5 +1,6 @@
-.vscode
 .DS_Store
 .env
 .venv
-build
+build/
+vcpkg/
+vcpkg_installed/

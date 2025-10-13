@@ -14,8 +14,7 @@
 #include "chunk/chunk.hpp"
 #include "utils/color_lib.hpp"
 
-asio::awaitable<void> LChunk::prep(const std::shared_ptr<const CFAsyncClient> cfCli){
-
+asio::awaitable<void> LChunk::prep(const std::shared_ptr<const CFAsyncClient> cfCli) {
     co_await downloadParts(cfCli);
     co_await downloadPointCloud(cfCli);
 
@@ -23,13 +22,13 @@ asio::awaitable<void> LChunk::prep(const std::shared_ptr<const CFAsyncClient> cf
     std::vector<GetOutcome> updates;
     {
         std::vector<GetParams> requests;
-        requests.reserve(_needsUpdateStr.size());
-        for (const auto& id : _needsUpdateStr)
+        requests.reserve(_needsUpdate.size());
+        for (const auto& id : _needsUpdate) 
             requests.push_back({
                 VARS::CF_POINT_CLOUDS_BUCKET,
-                id
+                Chunk::makeIdStr(_idl + 1, id, true)
             });
-
+        
         updates = co_await cfCli->getManyR2Objects(std::move(requests));
     }
 
@@ -61,7 +60,7 @@ asio::awaitable<void> LChunk::prep(const std::shared_ptr<const CFAsyncClient> cf
         cv::Mat points(k, 3, CV_32F);
         std::vector<uint16_t> colors(k);
 
-        for (int j = 0; j < k; ++j) {
+        for (size_t j = 0; j < k; ++j) {
             // copy point
             std::memcpy(
                 points.ptr<float>(j),
@@ -171,7 +170,6 @@ void LChunk::process(){
 }
 
 asio::awaitable<std::optional<std::string>> LChunk::update(const std::shared_ptr<const CFAsyncClient> cfCli) {
-
     co_await uploadParts(cfCli);
 
     // create parent chunk id for update
@@ -180,7 +178,7 @@ asio::awaitable<std::optional<std::string>> LChunk::update(const std::shared_ptr
         co_return std::nullopt;
 
     const int nextLocId = Chunk::mapBwd(layer - 1, locId);
-    co_return Chunk::makeIdStr(1, nextLocId, true);
+    co_return Chunk::makeIdStr(layer - 1, nextLocId, true);
 }
 
 boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<const CFAsyncClient> cfCli) {
@@ -198,21 +196,22 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<co
         header: | len (uint32_t)| content: list of ids and their corresponding content's offset and len (ex: [1,120,32]) |
     */
 
-    uint32_t headerStart = 2 + sizeof(uint32_t);
+    const uint32_t headerStart = 2 + sizeof(uint32_t);
     uint32_t headerLen;
     std::memcpy(&headerLen, obj.body.data() + 2, sizeof(uint32_t));
+    const uint32_t headerEnd = headerStart + headerLen;
 
     uint32_t numPoints;
     std::memcpy(&numPoints, obj.body.data() + headerStart + headerLen, sizeof(uint32_t));
 
-    uint32_t pointsStart = headerStart + headerLen + sizeof(uint32_t);
-    uint32_t colorsStart = pointsStart + numPoints * sizeof(float) * 3;
+    const uint32_t pointsStart = headerStart + headerLen + sizeof(uint32_t);
+    const uint32_t colorsStart = pointsStart + numPoints * sizeof(float) * 3;
 
     // only keep parts that do not need update
     std::unordered_set<uint64_t> nuSet(_needsUpdate.begin(), _needsUpdate.end());
 
-    uint32_t i = headerStart;
-    while (i < pointsStart) {
+    size_t i = headerStart;
+    while (i < headerEnd) {
         uint64_t id;
         std::memcpy(&id, obj.body.data() + i, sizeof(uint64_t));
 
@@ -231,7 +230,7 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<co
 
             _pointClouds.try_emplace(id, std::move(points), std::move(colidxs));
         }
-        i += sizeof(uint64_t) * 2;
+        i += PC_ENCODED_HEADER_ENTRY_SIZE;
     }
 }
 
@@ -241,7 +240,7 @@ boost::asio::awaitable<void> LChunk::uploadPointCloud(const std::shared_ptr<cons
         co_return;
 
     // allocate space for header + reserved
-    uint32_t headerLen = _pointClouds.size() * sizeof(uint64_t) * 2;
+    uint32_t headerLen = _pointClouds.size() * PC_ENCODED_HEADER_ENTRY_SIZE;
     std::vector<uint8_t> buf(headerLen + sizeof(uint32_t) + 2);
     std::memcpy(buf.data() + 2, &headerLen, sizeof(uint32_t));
 

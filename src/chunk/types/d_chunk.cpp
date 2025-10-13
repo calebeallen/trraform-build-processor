@@ -16,7 +16,7 @@
 #include "config/config.hpp"
 #include "utils/build_image.hpp"
 #include "utils/plot.hpp"
-#include "utils/cf_async_client.hpp"
+#include "async/cf_async_client.hpp"
 
 namespace asio = boost::asio;
 
@@ -30,10 +30,9 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<const CF
         for(size_t i = 0; i < _needsUpdate.size(); ++i)
             requests.push_back({
                 VARS::CF_PLOTS_BUCKET,
-                fmt::format("{:x}.dat", _needsUpdate[i]),
+                fmt::format("{:x}", _needsUpdate[i]),
                 _updateFlags[i].metadataOnly
             });
-
         updates = co_await cfCli->getManyR2Objects(std::move(requests));
     }
      
@@ -59,17 +58,22 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<const CF
             buildPart = Plot::getDefaultBuildData();
         else if (!flags.metadataOnly)
             buildPart = Plot::getBuildData(obj.body);
-        
-        const auto itv = obj.metadata.find("verified");
-        if (itv == obj.metadata.end())
-            throw std::runtime_error("Plot missing verified metadata");
-        const auto ito = obj.metadata.find("owner");
-        if (ito == obj.metadata.end())
-            throw std::runtime_error("Plot missing owner metadata");
 
-        bool verified = itv->second == "true";
+        // const auto itv = obj.metadata.find("verified");
+        // if (itv == obj.metadata.end())
+        //     throw std::runtime_error("Plot missing verified metadata");
+        // const auto ito = obj.metadata.find("owner");
+        // if (ito == obj.metadata.end())
+        //     throw std::runtime_error("Plot missing owner metadata");
+
+        // bool verified = itv->second == "true";
+        // json["verified"] = verified;
+        // json["owner"] = ito->second;
+
+        // DUMMY DATA BELOW, UNCOMMENT ABOVE CODE
+        bool verified = true;
         json["verified"] = verified;
-        json["owner"] = ito->second;
+        json["owner"] = "caleb";
 
         // remove subscriber features if needed
         if (!verified) {
@@ -77,7 +81,6 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<const CF
             json["linkTitle"] = "";
 
             // if build data is greater than max size, remove build
-            std::cout << Plot::getBuildSize(obj.body) << std::endl;
             if (Plot::getBuildSize(obj.body) > VARS::BUILD_SIZE_STD)
                 buildPart = Plot::getDefaultBuildData();
         }
@@ -108,14 +111,11 @@ asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<const CFAsyncCl
     for (const auto& res : results)
         if (res.err)
             throw std::runtime_error(res.errMsg);
-
 }
 
 asio::awaitable<void> DChunk::prep(const std::shared_ptr<const CFAsyncClient> cfCli) {
-
     co_await downloadParts(cfCli, true);
     co_await downloadPlotUpdates(cfCli);
-    
 }
 
 void DChunk::process() {

@@ -9,7 +9,7 @@
 #include <boost/asio/awaitable.hpp>
 
 #include "chunk/chunk_data.hpp"
-#include "utils/cf_async_client.hpp"
+#include "async/cf_async_client.hpp"
 #include "utils/plot.hpp"
 
 class DChunk : public virtual ChunkData {

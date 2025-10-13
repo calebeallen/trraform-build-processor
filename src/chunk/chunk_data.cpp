@@ -18,28 +18,25 @@
 #include "config/config.hpp"
 #include "chunk/chunk_data.hpp"
 #include "chunk/chunk.hpp"
-#include "utils/cf_async_client.hpp"
+#include "async/cf_async_client.hpp"
 
 ChunkData::ChunkData(
     std::string chunkId, 
     std::vector<std::string> needsUpdate
-): _chunkId(std::move(chunkId)), _needsUpdateStr(std::move(needsUpdate)) {
-    _needsUpdate.reserve(_needsUpdateStr.size());
-    for (const auto& s :_needsUpdateStr) {
-        const auto id = Chunk::parseIdStr(s);
-        _needsUpdate.push_back(id.second);
-    }
+): _chunkId(std::move(chunkId)) {
+    const auto [idl, idr] = Chunk::parseIdStr(_chunkId);
+    _idl = idl;
+    _idr = idr;
+
+    _needsUpdate.reserve(needsUpdate.size());
+    for (const auto& s : needsUpdate)
+        _needsUpdate.push_back(stoll(s, nullptr, 16));
 }
 
 asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<const CFAsyncClient> cfCli, bool keepAll) {
 
-    auto obj = co_await cfCli->getR2Object(
-        VARS::CF_CHUNKS_BUCKET, 
-        _chunkId + ".dat" 
-    );
-    
+    auto obj = co_await cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId);
     if (obj.err) {
-        std::cout << "ChunkId: " << _chunkId << ": " << obj.errMsg << std::endl;
         if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
             throw std::runtime_error(obj.errMsg);
         co_return;
@@ -94,7 +91,7 @@ asio::awaitable<void> ChunkData::uploadParts(const std::shared_ptr<const CFAsync
 
     auto out = co_await cfCli->putR2Object(
         VARS::CF_CHUNKS_BUCKET, 
-        _chunkId + ".dat", 
+        _chunkId, 
         "application/octet-stream", 
         std::move(data) 
     );
