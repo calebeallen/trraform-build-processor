@@ -1,30 +1,36 @@
 {
-  "version": 3,
-  "cmakeMinimumRequired": { "major": 3, "minor": 22 },
-  "configurePresets": [
-    {
-      "name": "base",
-      "generator": "Ninja",
-      "binaryDir": "${sourceDir}/build/${presetName}",
-      "cacheVariables": {
-        "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
-        "VCPKG_TARGET_TRIPLET": "x64-linux",
-        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
-      }
-    },
-    {
-      "name": "debug",
-      "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
-    },
-    {
-      "name": "release",
-      "inherits": "base",
-      "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
-    }
-  ],
-  "buildPresets": [
-    { "name": "debug", "configurePreset": "debug" },
-    { "name": "release", "configurePreset": "release" }
-  ]
+    "version": 3,
+    "cmakeMinimumRequired": { "major": 3, "minor": 22 },
+    "configurePresets": [{
+        "name": "x86",
+        "generator": "Ninja",
+        "binaryDir": "${sourceDir}/build/${presetName}",
+        "cacheVariables": {
+            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+            "VCPKG_TARGET_TRIPLET": "x64-linux",
+            "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+        }
+    }, {
+        "name": "arm",
+        "generator": "Ninja",
+        "binaryDir": "${sourceDir}/build/${presetName}",
+        "cacheVariables": {
+            "CMAKE_TOOLCHAIN_FILE": "${sourceDir}/vcpkg/scripts/buildsystems/vcpkg.cmake",
+            "VCPKG_TARGET_TRIPLET": "arm64-osx",
+            "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+            "CMAKE_OSX_ARCHITECTURES": "arm64"
+        }
+    }, {
+        "name": "arm-debug",
+        "inherits": "arm",
+        "cacheVariables": { "CMAKE_BUILD_TYPE": "Debug" }
+    }, {
+        "name": "arm-release",
+        "inherits": "arm",
+        "cacheVariables": { "CMAKE_BUILD_TYPE": "Release" }
+    }],
+    "buildPresets": [
+        { "name": "arm-debug", "configurePreset": "arm-debug" },
+        { "name": "arm-release", "configurePreset": "arm-release" }
+    ]
 }

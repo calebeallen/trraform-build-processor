@@ -49,43 +49,25 @@ static std::atomic<bool> killf = false;
 asio::awaitable<void> processChunk(
     redis::connection& redisCli,
     const std::shared_ptr<const CFAsyncClient> cfCli,
-    asio::thread_pool& pool, 
-    const std::shared_ptr<int> inFlight
+    asio::thread_pool& pool,
+    const std::string chunkId
 ) {
-    InFlightGuard ifg(inFlight);
-
     try {
         // pop chunk from queue, get children that need update
-        std::string chunkId;
         std::vector<std::string> needsUpdate;
         {
-            static const std::string script = R"(
-                local chunkId = redis.call('RPOP', KEYS[1])
-                if not chunkId then
-                    return nil
-                end
-                
-                local set_key = ARGV[1] .. chunkId
-                local needsUpdate = redis.call('SMEMBERS', set_key)
-                redis.call('DEL', set_key)
-                
-                return {chunkId, unpack(needsUpdate)}
-            )";
             redis::request req;
-            redis::response<std::optional<std::vector<std::string>>> res;
-            req.push("EVAL", script, "1", VARS::REDIS_UPDATE_QUEUE_PREFIX, VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX);
+            redis::response<std::vector<std::string>> res;
+            redis::response<int> del;
+            const std::string setKey = VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + chunkId;
+
+            req.push("MULTI");
+            req.push("SMEMBERS", setKey);
+            req.push("DEL", setKey);
+            req.push("EXEC");
+
             co_await redisCli.async_exec(req, res, asio::use_awaitable);
-            const auto& optRes = std::get<0>(res).value();
-            if (!optRes)
-                co_return;
-
-            const std::vector<std::string>& result = *optRes;
-            chunkId = result[0];
-
-            needsUpdate.reserve(result.size() - 1);
-            for (size_t i = 1; i < result.size(); ++i)
-                needsUpdate.push_back(std::move(result[i]));
-    
+            needsUpdate = std::get<0>(res).value();
         }
         
         std::cout << "Chunk " << chunkId << std::endl;
@@ -200,62 +182,9 @@ asio::awaitable<void> processChunk(
 }
 
 
-asio::awaitable<void> loop(
-    redis::connection& redisCli,
-    std::shared_ptr<const CFAsyncClient> cfCli,
-    asio::thread_pool& pool
-) {
+asio::awaitable<void> async_main() {
     auto exec = co_await asio::this_coro::executor;
     asio::steady_timer timer(exec);
-    std::shared_ptr<int> inFlight = std::make_shared<int>(0);
-
-    for (;;) {
-        if (killf.load(std::memory_order_relaxed))
-            co_return;
-
-        try {
-            timer.expires_after(50ms); // short sleep to unblock 
-            co_await timer.async_wait(asio::use_awaitable);
-
-            // throttle
-            if (*inFlight >= VARS::MAX_INFLIGHT)
-                continue;
-
-            int queueSize;
-            {
-                redis::request req;
-                redis::response<long long> resp;
-                req.push("LLEN", VARS::REDIS_UPDATE_QUEUE_PREFIX);
-                co_await redisCli.async_exec(req, resp, asio::use_awaitable);
-                queueSize = std::get<0>(resp).value();
-            }
-
-            // sleep if empty queue
-            if (queueSize == 0) {
-                timer.expires_after(1s);
-                co_await timer.async_wait(asio::use_awaitable);
-                continue;
-            }
-
-            asio::co_spawn(exec, processChunk(redisCli, cfCli, pool, inFlight), asio::detached);
-
-        } catch (const std::exception& e) {
-            std::cerr << "[ex] " << e.what() << "\n";
-        }
-    }
-
-}
-
-
-int main() {
-
-    char* envc = std::getenv("ENV");
-    std::string env = envc ? envc : "";
-    if (env != "PROD")
-        Utils::loadENV(".env");
-
-    // coroutine scheduler
-    asio::io_context ioc;
 
     // create thread pool with cores-1 threads
     asio::thread_pool pool(std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1));
@@ -276,8 +205,41 @@ int main() {
     cfg.password = std::getenv("REDIS_PASSWORD");
 
     boost::redis::logger lg(boost::redis::logger::level::emerg);
-    redis::connection redisCli(ioc, lg);
+    redis::connection redisCli(exec, lg);
     redisCli.async_run(cfg, asio::detached);
+
+    for (;;) {
+        if (killf.load(std::memory_order_relaxed))
+            co_return;
+
+        //TODO add inflight limit
+        try {
+            std::string chunkId;
+            {
+                redis::request req;
+                redis::response<std::string> resp;
+                req.push("BRPOP", VARS::REDIS_UPDATE_QUEUE_PREFIX);
+                co_await redisCli.async_exec(req, resp, asio::use_awaitable);
+                chunkId = std::get<0>(resp).value();
+            }
+            asio::co_spawn(exec, processChunk(redisCli, cfCli, pool, std::move(chunkId)), asio::detached);
+        } catch (const std::exception& e) {
+            std::cerr << "[ex] " << e.what() << "\n";
+        }
+    }
+
+    pool.join();
+}
+
+
+int main() {
+    char* envc = std::getenv("ENV");
+    std::string env = envc ? envc : "";
+    if (env != "PROD")
+        Utils::loadENV(".env");
+
+    // coroutine scheduler
+    asio::io_context ioc;
 
     // handle sigint sigterm
     asio::signal_set signals(ioc, SIGINT, SIGTERM);
@@ -291,11 +253,8 @@ int main() {
     std::cout << "Starting" << std::endl;
     
     // create coroutine for main loop
-    asio::co_spawn(ioc, loop(redisCli, cfCli, pool), asio::detached);
-
+    asio::co_spawn(ioc, async_main(), asio::detached);
     ioc.run();
-    pool.join();
 
     return 0;
-
 }

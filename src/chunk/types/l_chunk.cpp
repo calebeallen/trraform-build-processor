@@ -75,7 +75,7 @@ asio::awaitable<void> LChunk::prep(const std::shared_ptr<const CFAsyncClient> cf
             );
         }
 
-        _pointClouds.try_emplace(_needsUpdate[i], std::move(points), std::move(colors));
+        _pointClouds[_needsUpdate[i]] = PointCloud{std::move(points), std::move(colors)};
     }
 
     // save updated point cloud (not modified from here)
@@ -225,7 +225,7 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<co
             std::memcpy(points.data, pntptr, n * VEC3F_SIZE);
             std::memcpy(colidxs.data(), colptr, n * COLOR_IDX_SIZE);
 
-            _pointClouds.try_emplace(id, std::move(points), std::move(colidxs));
+            _pointClouds[id] = PointCloud{std::move(points), std::move(colidxs)};
         }
 
         pntptr += n * VEC3F_SIZE;

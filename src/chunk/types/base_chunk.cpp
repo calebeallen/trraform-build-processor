@@ -72,7 +72,7 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_
             colidxs[i] = build[i].second;
         }
 
-        _pointClouds.try_emplace(id, std::move(points), std::move(colidxs));
+        _pointClouds[id] = PointCloud{std::move(points), std::move(colidxs)};
     }
 
     co_await uploadPointCloud(cfCli);
