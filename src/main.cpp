@@ -56,20 +56,26 @@ asio::awaitable<void> processChunk(
         // pop chunk from queue, get children that need update
         std::vector<std::string> needsUpdate;
         {
+            static const std::string script = R"(
+                local set_key = ARGV[1] .. KEYS[1]
+                local needsUpdate = redis.call('SMEMBERS', set_key)
+                redis.call('DEL', set_key)
+                return needsUpdate
+            )";
+            
             redis::request req;
             redis::response<std::vector<std::string>> res;
-            redis::response<int> del;
-            const std::string setKey = VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + chunkId;
-
-            req.push("MULTI");
-            req.push("SMEMBERS", setKey);
-            req.push("DEL", setKey);
-            req.push("EXEC");
-
+            req.push("EVAL", script, "1", chunkId, VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX);
             co_await redisCli.async_exec(req, res, asio::use_awaitable);
-            needsUpdate = std::get<0>(res).value();
+            const auto& result = std::get<0>(res).value();
+
+            if (result.empty())
+                throw std::runtime_error(chunkId + " no children to update.");
+
+            needsUpdate.reserve(result.size());
+            for (size_t i = 0; i < result.size(); ++i)
+                needsUpdate.push_back(std::move(result[i]));
         }
-        
         std::cout << "Chunk " << chunkId << std::endl;
 
         const auto splitId = Chunk::parseIdStr(chunkId);
@@ -217,11 +223,17 @@ asio::awaitable<void> async_main() {
             std::string chunkId;
             {
                 redis::request req;
-                redis::response<std::string> resp;
-                req.push("BRPOP", VARS::REDIS_UPDATE_QUEUE_PREFIX);
+                redis::response<std::optional<std::array<std::string, 2>>> resp;
+                req.push("BRPOP", VARS::REDIS_UPDATE_QUEUE_PREFIX, "0");
                 co_await redisCli.async_exec(req, resp, asio::use_awaitable);
-                chunkId = std::get<0>(resp).value();
+
+                const auto& result = std::get<0>(resp).value();
+                if (!result.has_value())
+                    throw std::runtime_error("BRPOP returned null.");
+
+                chunkId = (*result)[1]; // [0] is queue name, [1] is the value
             }
+            std::cout << chunkId << std::endl;
             asio::co_spawn(exec, processChunk(redisCli, cfCli, pool, std::move(chunkId)), asio::detached);
         } catch (const std::exception& e) {
             std::cerr << "[ex] " << e.what() << "\n";
