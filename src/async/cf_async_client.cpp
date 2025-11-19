@@ -61,9 +61,7 @@ asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(
             req.SetBucket(bucket);
             req.SetKey(key);
 
-            std::cout << "here11" <<std::endl;
             const auto out = s3Cli->GetObject(req);
-            std::cout << "here12" <<std::endl;
 
             GetOutcome obj;
 

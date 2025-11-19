@@ -18,7 +18,7 @@ namespace VARS {
     inline constexpr int L0_SIZE = 87;
     inline constexpr int L1_SIZE = 7571;
     inline constexpr int L2_SIZE = D0_PLOT_COUNT;
-    inline constexpr float PC_SAMPLE_PERC = 0.1F;
+    inline constexpr float PC_SAMPLE_PERC = 0.4F;
 
     inline const std::string ORIGIN = "http://localhost:5173";
     inline const std::string CF_ZONE_ID = "64097c6d2cf0e0810ca05cdf8d4d1273";

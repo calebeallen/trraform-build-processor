@@ -20,6 +20,32 @@
 
 namespace asio = boost::asio;
 
+asio::awaitable<void> DChunk::prep(const std::shared_ptr<CFAsyncClient> cfCli) {
+    co_await downloadParts(cfCli, true);
+    co_await downloadPlotUpdates(cfCli);
+}
+
+void DChunk::process() {
+    // create new images for plots that need update
+    _updatedImages.reserve(_needsUpdate.size());
+    for (size_t i = 0; i < _needsUpdate.size(); ++i) {
+        const auto plotId = _needsUpdate[i];
+
+        if (_updateFlags[i].noImageUpdate)
+            _updatedImages.emplace_back(std::nullopt);
+        else {
+            const auto buildData = Plot::getBuildPart(_parts[plotId]);
+            _updatedImages.emplace_back(BuildImage::make(buildData));
+        }
+    }
+}
+
+asio::awaitable<std::optional<std::string>> DChunk::update(const std::shared_ptr<CFAsyncClient> cfCli) {
+    co_await uploadParts(cfCli);
+    co_await uploadImages(cfCli);
+    co_return std::nullopt;
+}
+
 asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncClient> cfCli) {
 
     // pull updates
@@ -49,7 +75,10 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncC
         nlohmann::json json;
         std::span<const std::uint8_t> buildPart;
 
-        if (flags.setDefaultJson) 
+        // metadata only means keep whatever is currently in the chunk and just change metadata field
+        // this is because HeadObject is used for metadata only update, so obj.body won't exist
+        // TODO: if ever a metadata only update is about to be queued, MUST first make sure that it won't overwrite a queued FULL update
+        if (flags.setDefaultJson)
             json = Plot::getDefaultJsonPart();
         else if (!flags.metadataOnly)
             json = Plot::getJsonPart(obj.body);
@@ -80,7 +109,7 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncC
             json["link"] = "";
             json["linkTitle"] = "";
 
-            // if build data is greater than max size, remove build
+            // if build data is greater than max size, remove build from world
             if (Plot::getBuildSize(obj.body) > VARS::BUILD_SIZE_STD)
                 buildPart = Plot::getDefaultBuildData();
         }
@@ -111,35 +140,4 @@ asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<CFAsyncClient> 
     for (const auto& res : results)
         if (res.err)
             throw std::runtime_error(res.errMsg);
-}
-
-asio::awaitable<void> DChunk::prep(const std::shared_ptr<CFAsyncClient> cfCli) {
-
-    std::cout << "downloading parts" << std::endl;
-    co_await downloadParts(cfCli, true);
-    std::cout << "downloading plot updates" << std::endl;
-    co_await downloadPlotUpdates(cfCli);
-}
-
-void DChunk::process() {
-
-    // create new images for plots that need update
-    _updatedImages.reserve(_needsUpdate.size());
-    for (size_t i = 0; i < _needsUpdate.size(); ++i) {
-        const auto plotId = _needsUpdate[i];
-
-        if (_updateFlags[i].noImageUpdate)
-            _updatedImages.emplace_back(std::nullopt);
-        else {
-            const auto buildData = Plot::getBuildPart(_parts[plotId]);
-            _updatedImages.emplace_back(BuildImage::make(buildData));
-        }
-    }
-
-}
-
-asio::awaitable<std::optional<std::string>> DChunk::update(const std::shared_ptr<CFAsyncClient> cfCli) {
-    co_await uploadParts(cfCli);
-    co_await uploadImages(cfCli);
-    co_return std::nullopt;
 }

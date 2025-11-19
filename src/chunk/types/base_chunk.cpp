@@ -22,9 +22,9 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_
     co_await uploadParts(cfCli);
     co_await uploadImages(cfCli);
 
-    // update point cloud
     co_await downloadPointCloud(cfCli);
 
+    // get point cloud vectors from build data
     std::mt19937 rng{std::random_device{}()};
     for (const auto& id : _needsUpdate) {
         const auto& part = _parts[id];
@@ -48,15 +48,18 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_
                 posidx += val;
             }
         }
-
-        if (!build.size())
+        
+        // a build must have 2 or more blocks to be processed later for low res chunks
+        if (build.size() < 2ul)
             continue;
             
         std::shuffle(build.begin(), build.end(), rng);
 
-        const size_t k = std::max(1ul, static_cast<size_t>(static_cast<float>(build.size()) * VARS::PC_SAMPLE_PERC));
+        const size_t k = std::max(2ul, static_cast<size_t>(static_cast<float>(build.size()) * VARS::PC_SAMPLE_PERC));
         cv::Mat points(k, 3, CV_32F);    
         std::vector<uint16_t> colidxs(k); 
+
+        std::cout << "sample size: " << k << std::endl;
 
         const cv::Vec3f worldPos = Utils::idxToVec3(Chunk::plotIdToPosIdx(id), VARS::MAIN_BUILD_SIZE);
         const uint16_t buildSize = buildData[1];
@@ -75,12 +78,15 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_
         _pointClouds[id] = PointCloud{std::move(points), std::move(colidxs)};
     }
 
-    co_await uploadPointCloud(cfCli);
+    if (!_pointClouds.empty()) {
+        co_await uploadPointCloud(cfCli);
 
-    // make next update chunk id
-    const auto splitId = Chunk::parseIdStr(_chunkId);
-    const auto nextLocId = Chunk::mapBwd(1, splitId.second);
-    const auto nextChunkId = Chunk::makeIdStr(1, nextLocId, true);
+        // make next update chunk id
+        const auto splitId = Chunk::parseIdStr(_chunkId);
+        const auto nextLocId = Chunk::mapBwd(1, splitId.second);
+        const auto nextChunkId = Chunk::makeIdStr(1, nextLocId, true);
+        co_return nextChunkId;
+    }
 
-    co_return nextChunkId;
+    co_return std::nullopt;
 }

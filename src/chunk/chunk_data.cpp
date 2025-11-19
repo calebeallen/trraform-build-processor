@@ -34,10 +34,7 @@ ChunkData::ChunkData(
 }
 
 asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<CFAsyncClient> cfCli, bool keepAll) {
-
-    std::cout << VARS::CF_CHUNKS_BUCKET << _chunkId << std::endl;
     auto obj = co_await cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId);
-    std::cout << "made it here" << std::endl;
     if (obj.err) {
         if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
             throw std::runtime_error(obj.errMsg);

@@ -107,10 +107,8 @@ asio::awaitable<void> processChunk(
                 args.insert(args.end(), getFlagsKeys.begin(), getFlagsKeys.end());
 
                 req.push_range("EVAL", args);
-                std::cout << "Here1" << std::endl;
                 co_await redisCli.async_exec(req, res, asio::use_awaitable);
-              
-                std::cout << "Here2" << std::endl;
+            
                 flagStrs = std::get<0>(res).value();
             }
 
@@ -144,16 +142,13 @@ asio::awaitable<void> processChunk(
 
         // pipeline
         co_await chunk->prep(cfCli);
-        std::cout << "Here p" << std::endl;
         // process chunk on thread pool
         co_await asio::co_spawn(pool.get_executor(), [&chunk]() mutable -> asio::awaitable<void> {
             chunk->process();
             co_return;
         }, asio::use_awaitable);
-        std::cout << "Here pp" << std::endl;
 
         const auto nextChunkId = co_await chunk->update(cfCli);
-        std::cout << *nextChunkId << std::endl;
         if (nextChunkId) {
             static const std::string script = R"(
                 local chunkId = ARGV[1]

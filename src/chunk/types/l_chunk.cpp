@@ -14,6 +14,10 @@
 #include "chunk/chunk.hpp"
 #include "utils/color_lib.hpp"
 
+constexpr size_t PC_ENCODED_HEADER_ENTRY_SIZE = sizeof(uint64_t) + sizeof(uint32_t);
+constexpr size_t VEC3F_SIZE = sizeof(float) * 3;
+constexpr size_t COLOR_IDX_SIZE = sizeof(uint16_t);
+
 asio::awaitable<void> LChunk::prep(const std::shared_ptr<CFAsyncClient> cfCli) {
     co_await downloadParts(cfCli);
     co_await downloadPointCloud(cfCli);
@@ -31,54 +35,55 @@ asio::awaitable<void> LChunk::prep(const std::shared_ptr<CFAsyncClient> cfCli) {
         
         updates = co_await cfCli->getManyR2Objects(std::move(requests));
     }
-
     // sample updated point clouds
     for (size_t i = 0; i < updates.size(); ++i) {
-        const auto& obj = updates[i];
-
+        auto& obj = updates[i];
         if (obj.err)
             throw std::runtime_error(obj.errMsg);
 
-        uint32_t headerStart = 2 + sizeof(uint32_t);
-        uint32_t headerLen;
-        std::memcpy(&headerLen, obj.body.data() + 2, sizeof(uint32_t));
-
-        uint32_t numPoints;
-        std::memcpy(&numPoints, obj.body.data() + headerStart + headerLen, sizeof(uint32_t));
-
-        uint32_t pointsStart = headerStart + headerLen + sizeof(uint32_t);
-        uint32_t colorsStart = pointsStart + numPoints * sizeof(float) * 3;
+        uint8_t* headerPtr = obj.body.data() + 2;
+        uint32_t totalEntries, totalPoints;
+        std::memcpy(&totalEntries, headerPtr, sizeof(uint32_t));
+        headerPtr += sizeof(uint32_t);
+        std::memcpy(&totalPoints, headerPtr, sizeof(uint32_t));
+        headerPtr += sizeof(uint32_t);
         
         // shuffle indices for random sample
-        std::vector<int> idx(numPoints);
+        std::vector<int> idx(totalPoints);
         std::iota(idx.begin(), idx.end(), 0);
         std::mt19937 rng(std::random_device{}());
         std::shuffle(idx.begin(), idx.end(), rng);
         
         // create matrix
-        const size_t k = std::max(1ul, static_cast<size_t>(static_cast<float>(numPoints) * VARS::PC_SAMPLE_PERC));
+        const size_t k = std::max(2ul, static_cast<size_t>(static_cast<float>(totalPoints) * VARS::PC_SAMPLE_PERC));
         cv::Mat points(k, 3, CV_32F);
         std::vector<uint16_t> colors(k);
+         
+        std::cout << "sample size l prep: " << k << std::endl;
+        
+
+        uint8_t* pntptr = headerPtr + totalEntries*PC_ENCODED_HEADER_ENTRY_SIZE;
+        uint8_t* colptr = pntptr + totalPoints*VEC3F_SIZE;
 
         for (size_t j = 0; j < k; ++j) {
             // copy point
             std::memcpy(
                 points.ptr<float>(j),
-                obj.body.data() + pointsStart + idx[j] * sizeof(float) * 3,
+                pntptr + idx[j]*VEC3F_SIZE,
                 sizeof(float) * 3
             );
             // copy color idx
             std::memcpy(
                 &colors[j],
-                obj.body.data() + colorsStart + idx[j] * sizeof(uint16_t),
+                colptr + idx[j]*COLOR_IDX_SIZE,
                 sizeof(uint16_t)
             );
         }
 
         _pointClouds[_needsUpdate[i]] = PointCloud{std::move(points), std::move(colors)};
     }
-
     // save updated point cloud (not modified from here)
+
     co_await uploadPointCloud(cfCli);
 }
 
@@ -181,10 +186,6 @@ asio::awaitable<std::optional<std::string>> LChunk::update(const std::shared_ptr
     co_return Chunk::makeIdStr(layer - 1, nextLocId, true);
 }
 
-constexpr size_t PC_ENCODED_HEADER_ENTRY_SIZE = sizeof(uint64_t) + sizeof(uint32_t);
-constexpr size_t VEC3F_SIZE = sizeof(float) * 3;
-constexpr size_t COLOR_IDX_SIZE = sizeof(uint16_t);
-
 boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<CFAsyncClient> cfCli) {
 
     auto obj = co_await cfCli->getR2Object(VARS::CF_POINT_CLOUDS_BUCKET, _chunkId); 
@@ -234,14 +235,18 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<CF
 }
 
 boost::asio::awaitable<void> LChunk::uploadPointCloud(const std::shared_ptr<CFAsyncClient> cfCli) const {
-
     if (_pointClouds.size() == 0)
         co_return;
 
     uint32_t totalEntries = _pointClouds.size();
+
+    assert(totalEntries > 0 && "Point cloud must have at least one entry");
+
     uint32_t totalPoints = 0;
     for (const auto& [_, pointCloud] : _pointClouds)
         totalPoints += pointCloud.points.rows;
+
+    assert(totalPoints > 1 && "Point cloud must have at least 2 points");
 
     // allocate buffer, write len prefixes
     std::vector<uint8_t> buf(2 + 2*sizeof(uint32_t) + totalEntries*PC_ENCODED_HEADER_ENTRY_SIZE + totalPoints*(VEC3F_SIZE + COLOR_IDX_SIZE));
