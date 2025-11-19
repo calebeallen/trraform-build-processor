@@ -20,8 +20,8 @@ public:
     DChunk(std::move(updateFlags)), 
     LChunk() {}
     
-    asio::awaitable<void> prep(const std::shared_ptr<const CFAsyncClient> cfCli) override { co_await DChunk::prep(cfCli); };
+    asio::awaitable<void> prep(const std::shared_ptr<CFAsyncClient> cfCli) override { co_await DChunk::prep(cfCli); };
     void process() override { DChunk::process(); };
-    boost::asio::awaitable<std::optional<std::string>> update(const std::shared_ptr<const CFAsyncClient> cfCli) override;
+    boost::asio::awaitable<std::optional<std::string>> update(const std::shared_ptr<CFAsyncClient> cfCli) override;
 
 };

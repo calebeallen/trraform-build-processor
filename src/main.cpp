@@ -30,6 +30,7 @@
 #include "async/cf_async_client.hpp"
 #include "utils/plot.hpp"
 #include "utils/utils.hpp"
+#include "utils/redis_pool.hpp"
 
 namespace redis = boost::redis;
 namespace asio = boost::asio;
@@ -48,7 +49,7 @@ static std::atomic<bool> killf = false;
 
 asio::awaitable<void> processChunk(
     redis::connection& redisCli,
-    const std::shared_ptr<const CFAsyncClient> cfCli,
+    const std::shared_ptr<CFAsyncClient>& cfCli,
     asio::thread_pool& pool,
     const std::string chunkId
 ) {
@@ -73,10 +74,9 @@ asio::awaitable<void> processChunk(
                 throw std::runtime_error(chunkId + " no children to update.");
 
             needsUpdate.reserve(result.size());
-            for (size_t i = 0; i < result.size(); ++i)
+            for (size_t i = 0; i < result.size(); ++i) 
                 needsUpdate.push_back(std::move(result[i]));
         }
-        std::cout << "Chunk " << chunkId << std::endl;
 
         const auto splitId = Chunk::parseIdStr(chunkId);
         std::unique_ptr<ChunkData> chunk;
@@ -100,7 +100,6 @@ asio::awaitable<void> processChunk(
                 )";
                 redis::request req;
                 redis::response<std::vector<std::optional<std::string>>> res;
-
                 std::vector<std::string> args;
                 args.reserve(2 + getFlagsKeys.size());
                 args.emplace_back(script);
@@ -108,10 +107,11 @@ asio::awaitable<void> processChunk(
                 args.insert(args.end(), getFlagsKeys.begin(), getFlagsKeys.end());
 
                 req.push_range("EVAL", args);
+                std::cout << "Here1" << std::endl;
                 co_await redisCli.async_exec(req, res, asio::use_awaitable);
-
+              
+                std::cout << "Here2" << std::endl;
                 flagStrs = std::get<0>(res).value();
-
             }
 
             // parse update flag strings
@@ -142,16 +142,18 @@ asio::awaitable<void> processChunk(
         } else
             chunk = std::make_unique<LChunk>(chunkId, std::move(needsUpdate));
 
-
         // pipeline
         co_await chunk->prep(cfCli);
+        std::cout << "Here p" << std::endl;
         // process chunk on thread pool
         co_await asio::co_spawn(pool.get_executor(), [&chunk]() mutable -> asio::awaitable<void> {
             chunk->process();
             co_return;
         }, asio::use_awaitable);
+        std::cout << "Here pp" << std::endl;
 
         const auto nextChunkId = co_await chunk->update(cfCli);
+        std::cout << *nextChunkId << std::endl;
         if (nextChunkId) {
             static const std::string script = R"(
                 local chunkId = ARGV[1]
@@ -189,30 +191,29 @@ asio::awaitable<void> processChunk(
 
 
 asio::awaitable<void> async_main() {
-    auto exec = co_await asio::this_coro::executor;
-    asio::steady_timer timer(exec);
+    const auto exec = co_await asio::this_coro::executor;
 
     // create thread pool with cores-1 threads
-    asio::thread_pool pool(std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1));
+    asio::thread_pool threadPool(std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1));
 
     // init Cloudflare helper
-    std::shared_ptr<const CFAsyncClient> cfCli = std::make_shared<const CFAsyncClient>(
+    const std::shared_ptr<CFAsyncClient> cfCli = std::make_shared<CFAsyncClient>(
         "https://1534f5e1cce37d41a018df4c9716751e.r2.cloudflarestorage.com",
         std::getenv("CF_R2_ACCESS_KEY"),
         std::getenv("CF_R2_SECRET_KEY"),
-        std::getenv("CF_API_TOKEN")
+        10
     );
 
-    // init Redis client
+    // init Redis connection pool
     redis::config cfg;
     cfg.addr.host = "redis-16216.c15.us-east-1-4.ec2.redns.redis-cloud.com";
     cfg.addr.port = "16216";
     cfg.username = "default";
     cfg.password = std::getenv("REDIS_PASSWORD");
-
-    boost::redis::logger lg(boost::redis::logger::level::emerg);
-    redis::connection redisCli(exec, lg);
-    redisCli.async_run(cfg, asio::detached);
+    RedisPool redisPool(exec, cfg, 5);
+    redis::logger lg(boost::redis::logger::level::emerg);
+    redis::connection redisBlockingConn(exec, lg); // separate connection for BRPOP
+    redisBlockingConn.async_run(cfg, asio::detached);  
 
     for (;;) {
         if (killf.load(std::memory_order_relaxed))
@@ -224,27 +225,34 @@ asio::awaitable<void> async_main() {
             {
                 redis::request req;
                 redis::response<std::optional<std::array<std::string, 2>>> resp;
-                req.push("BRPOP", VARS::REDIS_UPDATE_QUEUE_PREFIX, "0");
-                co_await redisCli.async_exec(req, resp, asio::use_awaitable);
+                req.push("BRPOP", VARS::REDIS_UPDATE_QUEUE_PREFIX, "5");
+                co_await redisBlockingConn.async_exec(req, resp, asio::use_awaitable);
 
                 const auto& result = std::get<0>(resp).value();
-                if (!result.has_value())
-                    throw std::runtime_error("BRPOP returned null.");
+                if (!result.has_value()) {
+                    std::cout << "BRPOP returned null." << std::endl;
+                    continue;
+                }
 
                 chunkId = (*result)[1]; // [0] is queue name, [1] is the value
             }
             std::cout << chunkId << std::endl;
-            asio::co_spawn(exec, processChunk(redisCli, cfCli, pool, std::move(chunkId)), asio::detached);
+            asio::co_spawn(exec, processChunk(redisPool.get(), cfCli, threadPool, std::move(chunkId)), asio::detached);
         } catch (const std::exception& e) {
             std::cerr << "[ex] " << e.what() << "\n";
         }
     }
-
-    pool.join();
+    threadPool.join();
 }
 
+extern "C" const char* __asan_default_options() {
+    return "detect_container_overflow=0";
+}
 
 int main() {
+    Aws::SDKOptions s3Opts;
+    Aws::InitAPI(s3Opts);
+
     char* envc = std::getenv("ENV");
     std::string env = envc ? envc : "";
     if (env != "PROD")
@@ -268,5 +276,6 @@ int main() {
     asio::co_spawn(ioc, async_main(), asio::detached);
     ioc.run();
 
+    Aws::ShutdownAPI(s3Opts);
     return 0;
 }

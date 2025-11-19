@@ -33,9 +33,11 @@ ChunkData::ChunkData(
         _needsUpdate.push_back(stoll(s, nullptr, 16));
 }
 
-asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<const CFAsyncClient> cfCli, bool keepAll) {
+asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<CFAsyncClient> cfCli, bool keepAll) {
 
+    std::cout << VARS::CF_CHUNKS_BUCKET << _chunkId << std::endl;
     auto obj = co_await cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId);
+    std::cout << "made it here" << std::endl;
     if (obj.err) {
         if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
             throw std::runtime_error(obj.errMsg);
@@ -66,7 +68,7 @@ asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<const CFAsy
     }
 }
 
-asio::awaitable<void> ChunkData::uploadParts(const std::shared_ptr<const CFAsyncClient> cfCli) const {
+asio::awaitable<void> ChunkData::uploadParts(const std::shared_ptr<CFAsyncClient> cfCli) const {
     // encode parts
     size_t size = 2; // reserve first 2 bytes (version)
     for(auto& [key, part] : _parts)

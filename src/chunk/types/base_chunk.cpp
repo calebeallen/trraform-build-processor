@@ -17,7 +17,7 @@
 #include "utils/plot.hpp"
 #include "chunk/chunk.hpp"
 
-asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_ptr<const CFAsyncClient> cfCli) {
+asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_ptr<CFAsyncClient> cfCli) {
 
     co_await uploadParts(cfCli);
     co_await uploadImages(cfCli);

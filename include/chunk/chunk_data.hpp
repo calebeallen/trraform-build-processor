@@ -20,16 +20,16 @@ protected:
     std::string _chunkId;
     uint64_t _idl, _idr;
 
-    asio::awaitable<void> downloadParts(const std::shared_ptr<const CFAsyncClient> cfCli, bool keepAll = false);
-    asio::awaitable<void> uploadParts(const std::shared_ptr<const CFAsyncClient> cfCli) const;
+    asio::awaitable<void> downloadParts(const std::shared_ptr<CFAsyncClient> cfCli, bool keepAll = false);
+    asio::awaitable<void> uploadParts(const std::shared_ptr<CFAsyncClient> cfCli) const;
 
 public:
     ChunkData() = default;
     ChunkData(std::string chunkId, std::vector<std::string> needsUpdate);
     virtual ~ChunkData() = default;
 
-    virtual asio::awaitable<void> prep(const std::shared_ptr<const CFAsyncClient> cfCli) = 0;
+    virtual asio::awaitable<void> prep(const std::shared_ptr<CFAsyncClient> cfCli) = 0;
     virtual void process() = 0;
-    virtual asio::awaitable<std::optional<std::string>> update(const std::shared_ptr<const CFAsyncClient> cfCli) = 0;
+    virtual asio::awaitable<std::optional<std::string>> update(const std::shared_ptr<CFAsyncClient> cfCli) = 0;
 
 };

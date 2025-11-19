@@ -43,13 +43,12 @@ target_compile_options(${PROJECT_NAME} PRIVATE
     -Wall                    # Enable all warnings
     -Wextra                  # Enable extra warnings
     -Wpedantic               # Enable pedantic warnings
-    -fsanitize=address       # <<< ENABLE ADDRESS SANITIZER
+    # -fsanitize=address       # <<< ENABLE ADDRESS SANITIZER
 )
 
 # linker optimizations
 target_link_options(${PROJECT_NAME} PRIVATE
     -flto=auto
-    -fsanitize=address
 )
 
 

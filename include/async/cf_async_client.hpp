@@ -10,6 +10,8 @@
 #include <aws/core/Aws.h>
 #include <aws/core/auth/AWSCredentials.h>
 #include <boost/asio/awaitable.hpp>
+#include <boost/asio/thread_pool.hpp>
+
 #include <nlohmann/json.hpp>
 
 namespace asio = boost::asio;
@@ -29,10 +31,10 @@ struct GetOutcome {
 };
 
 struct PutParams {
-    const std::string bucket;
-    const std::string key;
-    const std::string contentType;
-    const std::vector<uint8_t> data;
+    std::string bucket;
+    std::string key;
+    std::string contentType;
+    std::vector<uint8_t> data;
 };
 
 struct PutOutcome {
@@ -45,22 +47,25 @@ class CFAsyncClient {
 
 private:
     std::shared_ptr<Aws::S3::S3Client> _s3Cli;
-    Aws::SDKOptions _s3CliOpts;
-    std::string _apiToken;
+    asio::thread_pool _threadPool;
 
 public:
-    CFAsyncClient(const std::string&, const std::string&, const std::string&, const std::string&);
-    ~CFAsyncClient();
+    CFAsyncClient(
+        const std::string& r2EndPoint,
+        const std::string& r2AccessKey,
+        const std::string& r2SecretKey,
+        int concurrency
+    );
     
-    asio::awaitable<GetOutcome> getR2Object(const std::string& bucket, const std::string& key) const;
-    asio::awaitable<GetOutcome> headR2Object(const std::string& bucket, const std::string& key) const;
+    asio::awaitable<GetOutcome> getR2Object(const std::string& bucket, const std::string& key);
+    asio::awaitable<GetOutcome> headR2Object(const std::string& bucket, const std::string& key);
     asio::awaitable<PutOutcome> putR2Object(
         const std::string& bucket, 
         const std::string& key,
         const std::string& contentType,
-        const std::vector<uint8_t> data
-    ) const;
-    asio::awaitable<std::vector<GetOutcome>> getManyR2Objects(const std::vector<GetParams> requests) const;
-    asio::awaitable<std::vector<PutOutcome>> putManyR2Objects(const std::vector<PutParams> requests) const;
+        std::vector<uint8_t> data
+    );
+    asio::awaitable<std::vector<GetOutcome>> getManyR2Objects(std::vector<GetParams> requests);
+    asio::awaitable<std::vector<PutOutcome>> putManyR2Objects(std::vector<PutParams> requests);
 
 };

@@ -20,7 +20,7 @@
 
 namespace asio = boost::asio;
 
-asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<const CFAsyncClient> cfCli) {
+asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncClient> cfCli) {
 
     // pull updates
     std::vector<GetOutcome> updates;
@@ -90,7 +90,7 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<const CF
     }
 }
 
-asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<const CFAsyncClient> cfCli) const {
+asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<CFAsyncClient> cfCli) const {
 
     std::vector<PutParams> requests; 
 
@@ -113,8 +113,11 @@ asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<const CFAsyncCl
             throw std::runtime_error(res.errMsg);
 }
 
-asio::awaitable<void> DChunk::prep(const std::shared_ptr<const CFAsyncClient> cfCli) {
+asio::awaitable<void> DChunk::prep(const std::shared_ptr<CFAsyncClient> cfCli) {
+
+    std::cout << "downloading parts" << std::endl;
     co_await downloadParts(cfCli, true);
+    std::cout << "downloading plot updates" << std::endl;
     co_await downloadPlotUpdates(cfCli);
 }
 
@@ -135,7 +138,7 @@ void DChunk::process() {
 
 }
 
-asio::awaitable<std::optional<std::string>> DChunk::update(const std::shared_ptr<const CFAsyncClient> cfCli) {
+asio::awaitable<std::optional<std::string>> DChunk::update(const std::shared_ptr<CFAsyncClient> cfCli) {
     co_await uploadParts(cfCli);
     co_await uploadImages(cfCli);
     co_return std::nullopt;

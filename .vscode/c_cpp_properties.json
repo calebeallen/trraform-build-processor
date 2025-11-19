@@ -20,6 +20,11 @@
             "intelliSenseMode": "macos-clang-arm64",
             "compileCommands": [
                 "${workspaceFolder}/build/arm-debug/compile_commands.json"
+            ],
+            "includePath": [
+                "${default}",
+                "${workspaceFolder}/include/**",
+                "${workspaceFolder}/build/arm-debug/vcpkg_installed/arm64-osx/include"
             ]
         }
     ],

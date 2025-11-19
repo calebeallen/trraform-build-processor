@@ -14,7 +14,7 @@
 #include "chunk/chunk.hpp"
 #include "utils/color_lib.hpp"
 
-asio::awaitable<void> LChunk::prep(const std::shared_ptr<const CFAsyncClient> cfCli) {
+asio::awaitable<void> LChunk::prep(const std::shared_ptr<CFAsyncClient> cfCli) {
     co_await downloadParts(cfCli);
     co_await downloadPointCloud(cfCli);
 
@@ -169,7 +169,7 @@ void LChunk::process(){
 
 }
 
-asio::awaitable<std::optional<std::string>> LChunk::update(const std::shared_ptr<const CFAsyncClient> cfCli) {
+asio::awaitable<std::optional<std::string>> LChunk::update(const std::shared_ptr<CFAsyncClient> cfCli) {
     co_await uploadParts(cfCli);
 
     // create parent chunk id for update
@@ -185,7 +185,7 @@ constexpr size_t PC_ENCODED_HEADER_ENTRY_SIZE = sizeof(uint64_t) + sizeof(uint32
 constexpr size_t VEC3F_SIZE = sizeof(float) * 3;
 constexpr size_t COLOR_IDX_SIZE = sizeof(uint16_t);
 
-boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<const CFAsyncClient> cfCli) {
+boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<CFAsyncClient> cfCli) {
 
     auto obj = co_await cfCli->getR2Object(VARS::CF_POINT_CLOUDS_BUCKET, _chunkId); 
     if (obj.err) {
@@ -233,7 +233,7 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<co
     }
 }
 
-boost::asio::awaitable<void> LChunk::uploadPointCloud(const std::shared_ptr<const CFAsyncClient> cfCli) const {
+boost::asio::awaitable<void> LChunk::uploadPointCloud(const std::shared_ptr<CFAsyncClient> cfCli) const {
 
     if (_pointClouds.size() == 0)
         co_return;

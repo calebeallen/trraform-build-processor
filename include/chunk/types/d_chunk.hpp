@@ -18,8 +18,8 @@ protected:
     std::vector<std::optional<std::vector<uint8_t>>> _updatedImages;
     std::vector<Plot::UpdateFlags> _updateFlags;
    
-    asio::awaitable<void> downloadPlotUpdates(const std::shared_ptr<const CFAsyncClient> cfCli);
-    asio::awaitable<void> uploadImages(const std::shared_ptr<const CFAsyncClient> cfCli) const;
+    asio::awaitable<void> downloadPlotUpdates(const std::shared_ptr<CFAsyncClient> cfCli);
+    asio::awaitable<void> uploadImages(const std::shared_ptr<CFAsyncClient> cfCli) const;
 
 public:
     DChunk(std::vector<Plot::UpdateFlags> updateFlags) : _updateFlags(std::move(updateFlags)) {};
@@ -32,8 +32,8 @@ public:
 
     virtual ~DChunk() = default;
 
-    virtual asio::awaitable<void> prep(const std::shared_ptr<const CFAsyncClient> cfCli) override;
+    virtual asio::awaitable<void> prep(const std::shared_ptr<CFAsyncClient> cfCli) override;
     void process() override;
-    virtual asio::awaitable<std::optional<std::string>> update(const std::shared_ptr<const CFAsyncClient> cfCli) override;
+    virtual asio::awaitable<std::optional<std::string>> update(const std::shared_ptr<CFAsyncClient> cfCli) override;
     
 };

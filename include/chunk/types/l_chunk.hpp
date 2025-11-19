@@ -20,8 +20,8 @@ class LChunk : public virtual ChunkData {
 protected:
     std::unordered_map<uint64_t, PointCloud> _pointClouds;
 
-    boost::asio::awaitable<void> downloadPointCloud(const std::shared_ptr<const CFAsyncClient> cfCli);
-    boost::asio::awaitable<void> uploadPointCloud(const std::shared_ptr<const CFAsyncClient> cfCli) const;
+    boost::asio::awaitable<void> downloadPointCloud(const std::shared_ptr<CFAsyncClient> cfCli);
+    boost::asio::awaitable<void> uploadPointCloud(const std::shared_ptr<CFAsyncClient> cfCli) const;
 
 public:
     LChunk() = default;
@@ -30,8 +30,8 @@ public:
         std::vector<std::string> needsUpdate
     ) : ChunkData(std::move(chunkId), std::move(needsUpdate)) {};
 
-    boost::asio::awaitable<void> prep(const std::shared_ptr<const CFAsyncClient> cfCli) override;
+    boost::asio::awaitable<void> prep(const std::shared_ptr<CFAsyncClient> cfCli) override;
     void process() override;
-    boost::asio::awaitable<std::optional<std::string>> update(const std::shared_ptr<const CFAsyncClient> cfCli) override;
+    boost::asio::awaitable<std::optional<std::string>> update(const std::shared_ptr<CFAsyncClient> cfCli) override;
 
 };
