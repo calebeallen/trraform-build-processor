@@ -4,7 +4,7 @@
 
 namespace VARS {
 
-    inline constexpr int MAX_INFLIGHT = 20;
+    inline constexpr int PIPELINE_LIMIT = 20;
 
     inline constexpr int KMEANS_MAX_CLUSTERS = 5;
     inline constexpr int KMEANS_MAX_ITERS = 5;

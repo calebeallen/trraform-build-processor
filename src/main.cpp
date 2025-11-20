@@ -31,6 +31,7 @@
 #include "utils/plot.hpp"
 #include "utils/utils.hpp"
 #include "utils/redis_pool.hpp"
+#include "async/async_semaphore.hpp"
 
 namespace redis = boost::redis;
 namespace asio = boost::asio;
@@ -48,6 +49,7 @@ public:
 static std::atomic<bool> killf = false;
 
 asio::awaitable<void> processChunk(
+    AsyncSemaphore& inFlight,
     redis::connection& redisCli,
     const std::shared_ptr<CFAsyncClient>& cfCli,
     asio::thread_pool& pool,
@@ -57,25 +59,21 @@ asio::awaitable<void> processChunk(
         // pop chunk from queue, get children that need update
         std::vector<std::string> needsUpdate;
         {
-            static const std::string script = R"(
-                local set_key = ARGV[1] .. KEYS[1]
-                local needsUpdate = redis.call('SMEMBERS', set_key)
-                redis.call('DEL', set_key)
-                return needsUpdate
-            )";
-            
+            const std::string setKey = VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + chunkId;
             redis::request req;
-            redis::response<std::vector<std::string>> res;
-            req.push("EVAL", script, "1", chunkId, VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX);
+            req.push("SMEMBERS", setKey);
+            req.push("DEL", setKey);
+            
+            redis::response<std::vector<std::string>, size_t> res;
             co_await redisCli.async_exec(req, res, asio::use_awaitable);
             const auto& result = std::get<0>(res).value();
-
             if (result.empty())
                 throw std::runtime_error(chunkId + " no children to update.");
-
+            
             needsUpdate.reserve(result.size());
-            for (size_t i = 0; i < result.size(); ++i) 
-                needsUpdate.push_back(std::move(result[i]));
+            for (const auto& item : result) {
+                needsUpdate.push_back(item);
+            }
         }
 
         const auto splitId = Chunk::parseIdStr(chunkId);
@@ -91,22 +89,11 @@ asio::awaitable<void> processChunk(
             // get update flags
             std::vector<std::optional<std::string>> flagStrs;
             {
-                static const std::string script = R"(
-                    local n = #KEYS
-                    if n == 0 then return {} end
-                    local vals = redis.call('MGET', unpack(KEYS))
-                    redis.call('DEL', unpack(KEYS))
-                    return vals
-                )";
                 redis::request req;
-                redis::response<std::vector<std::optional<std::string>>> res;
-                std::vector<std::string> args;
-                args.reserve(2 + getFlagsKeys.size());
-                args.emplace_back(script);
-                args.emplace_back(std::to_string(getFlagsKeys.size()));
-                args.insert(args.end(), getFlagsKeys.begin(), getFlagsKeys.end());
+                req.push_range("MGET", getFlagsKeys);
+                req.push_range("DEL", getFlagsKeys);
 
-                req.push_range("EVAL", args);
+                redis::response<std::vector<std::optional<std::string>>, size_t> res;
                 co_await redisCli.async_exec(req, res, asio::use_awaitable);
             
                 flagStrs = std::get<0>(res).value();
@@ -182,6 +169,7 @@ asio::awaitable<void> processChunk(
     } catch (const std::exception& e) {
         std::cerr << "[ex] " << e.what() << "\n";
     }
+    inFlight.release();
 }
 
 
@@ -196,7 +184,7 @@ asio::awaitable<void> async_main() {
         "https://1534f5e1cce37d41a018df4c9716751e.r2.cloudflarestorage.com",
         std::getenv("CF_R2_ACCESS_KEY"),
         std::getenv("CF_R2_SECRET_KEY"),
-        10
+        VARS::PIPELINE_LIMIT * 2
     );
 
     // init Redis connection pool
@@ -205,16 +193,20 @@ asio::awaitable<void> async_main() {
     cfg.addr.port = "16216";
     cfg.username = "default";
     cfg.password = std::getenv("REDIS_PASSWORD");
-    RedisPool redisPool(exec, cfg, 5);
+    cfg.health_check_interval = std::chrono::seconds(10);
+    RedisPool redisPool(exec, cfg, VARS::PIPELINE_LIMIT / 2);
     redis::logger lg(boost::redis::logger::level::emerg);
     redis::connection redisBlockingConn(exec, lg); // separate connection for BRPOP
     redisBlockingConn.async_run(cfg, asio::detached);  
+
+    AsyncSemaphore inFlight(exec, VARS::PIPELINE_LIMIT);
 
     for (;;) {
         if (killf.load(std::memory_order_relaxed))
             co_return;
 
-        //TODO add inflight limit
+        co_await inFlight.async_acquire();
+
         try {
             std::string chunkId;
             {
@@ -224,15 +216,19 @@ asio::awaitable<void> async_main() {
                 co_await redisBlockingConn.async_exec(req, resp, asio::use_awaitable);
 
                 const auto& result = std::get<0>(resp).value();
-                if (!result.has_value()) {
-                    std::cout << "BRPOP returned null." << std::endl;
+                if (!result.has_value())
                     continue;
-                }
 
                 chunkId = (*result)[1]; // [0] is queue name, [1] is the value
             }
             std::cout << chunkId << std::endl;
-            asio::co_spawn(exec, processChunk(redisPool.get(), cfCli, threadPool, std::move(chunkId)), asio::detached);
+            asio::co_spawn(exec, processChunk(
+                inFlight,
+                redisPool.get(), 
+                cfCli, 
+                threadPool, 
+                std::move(chunkId)
+            ), asio::detached);
         } catch (const std::exception& e) {
             std::cerr << "[ex] " << e.what() << "\n";
         }
