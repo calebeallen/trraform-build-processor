@@ -59,8 +59,6 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_
         cv::Mat points(k, 3, CV_32F);    
         std::vector<uint16_t> colidxs(k); 
 
-        std::cout << "sample size: " << k << std::endl;
-
         const cv::Vec3f worldPos = Utils::idxToVec3(Chunk::plotIdToPosIdx(id), VARS::MAIN_BUILD_SIZE);
         const uint16_t buildSize = buildData[1];
         const cv::Vec3f centerOffset(0.5f,0.5f,0.5f);

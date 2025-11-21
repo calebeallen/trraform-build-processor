@@ -184,7 +184,7 @@ asio::awaitable<void> processChunk(
             fmt::format("{:x}", splitId.second),
             VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX,
             VARS::REDIS_UPDATE_QUEUE_PREFIX,
-            "1800" // 30 mins
+            "1800" // 30 min expiry
         );
         co_await redisCli.async_exec(req, res, asio::use_awaitable); 
     }
@@ -219,14 +219,16 @@ asio::awaitable<void> async_main() {
     redis::connection redisBlockingConn(exec, lg); // separate connection for BRPOP
     redisBlockingConn.async_run(cfg, asio::detached);  
 
-    AsyncSemaphore inFlight(exec, VARS::PIPELINE_LIMIT);
+    AsyncSemaphore pipelineSem(exec, VARS::PIPELINE_LIMIT);
     std::unordered_set<std::string> inPipeline;
+
+    std::cout << "Started" << std::endl;
 
     for (;;) {
         if (killf.load(std::memory_order_relaxed))
             co_return;
 
-        co_await inFlight.async_acquire();
+        co_await pipelineSem.async_acquire();
 
         try {
             std::string chunkId;
@@ -243,14 +245,23 @@ asio::awaitable<void> async_main() {
                 chunkId = (*result)[1]; // [0] is queue name, [1] is the value
             }
 
-            std::cout << chunkId << std::endl;
-            asio::co_spawn(exec, processChunk(
-                inFlight,
-                redisPool.get(), 
-                cfCli, 
-                threadPool, 
-                std::move(chunkId)
-            ), asio::detached);
+            // for very rare case that chunk id is already being processed when dequeued
+            if (inPipeline.contains(chunkId)) {
+                redis::request req;
+                redis::response<redis::ignore_t> resp;
+                req.push("LPUSH", VARS::REDIS_UPDATE_QUEUE_PREFIX, chunkId);
+                co_await redisBlockingConn.async_exec(req, resp, asio::use_awaitable);
+            // process chunk
+            } else { 
+                std::cout << "Processing chunk " << chunkId << std::endl;
+                asio::co_spawn(exec, processChunk(
+                    pipelineSem,
+                    redisPool.get(), 
+                    cfCli, 
+                    threadPool, 
+                    std::move(chunkId)
+                ), asio::detached);
+            }
         } catch (const std::exception& e) {
             std::cerr << "[ex] " << e.what() << "\n";
         }
@@ -265,6 +276,8 @@ extern "C" const char* __asan_default_options() {
 int main() {
     Aws::SDKOptions s3Opts;
     Aws::InitAPI(s3Opts);
+
+    assert(VARS::PIPELINE_LIMIT > 1 && "Pipeline limit must be greater than 1");
 
     char* envc = std::getenv("ENV");
     std::string env = envc ? envc : "";
@@ -282,8 +295,6 @@ int main() {
             ioc.stop();
         }
     });
-
-    std::cout << "Starting" << std::endl;
     
     // create coroutine for main loop
     asio::co_spawn(ioc, async_main(), asio::detached);

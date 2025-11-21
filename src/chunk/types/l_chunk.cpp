@@ -59,9 +59,6 @@ asio::awaitable<void> LChunk::prep(const std::shared_ptr<CFAsyncClient> cfCli) {
         cv::Mat points(k, 3, CV_32F);
         std::vector<uint16_t> colors(k);
          
-        std::cout << "sample size l prep: " << k << std::endl;
-        
-
         uint8_t* pntptr = headerPtr + totalEntries*PC_ENCODED_HEADER_ENTRY_SIZE;
         uint8_t* colptr = pntptr + totalPoints*VEC3F_SIZE;
 
@@ -115,9 +112,7 @@ void LChunk::process(){
         }
 
         // compute number of boxes
-        double kLin = std::min(static_cast<double>(n) / static_cast<double>(std::pow(VARS::BUILD_SIZE_STD, 3)), 1.0);
-        size_t k = static_cast<size_t>((1.0 - std::pow(kLin - 1.0, 6)) * VARS::KMEANS_MAX_CLUSTERS);
-        k = std::clamp(k, 1ul, n);
+        size_t k = static_cast<size_t>(std::log10(static_cast<double>(n) + 1.)) + 1;
 
         cv::Mat labels, centers;
         cv::kmeans(

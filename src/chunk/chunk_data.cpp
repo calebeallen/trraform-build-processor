@@ -33,6 +33,9 @@ ChunkData::ChunkData(
         _needsUpdate.push_back(stoll(s, nullptr, 16));
 }
 
+constexpr size_t PART_ID_SIZE = sizeof(uint64_t);
+constexpr size_t PART_LEN_SIZE = sizeof(uint32_t);
+
 asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<CFAsyncClient> cfCli, bool keepAll) {
     auto obj = co_await cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId);
     if (obj.err) {
@@ -47,13 +50,13 @@ asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<CFAsyncClie
     while (i < obj.body.size()) {
         // read id (64 bit int little endian)
         uint64_t id;
-        std::memcpy(&id, obj.body.data() + i, sizeof(std::uint64_t));
-        i += 8;
+        std::memcpy(&id, obj.body.data() + i, PART_ID_SIZE);
+        i += PART_ID_SIZE;
 
         // read part len metadata (32 bit int little endian)
         uint32_t partLen;
-        std::memcpy(&partLen, obj.body.data() + i, sizeof(uint32_t));
-        i += 4;
+        std::memcpy(&partLen, obj.body.data() + i, PART_LEN_SIZE);
+        i += PART_LEN_SIZE;
 
         // if keep all false, only keep items that do not need update
         if (keepAll || (!keepAll && !nuSet.contains(id))) {
@@ -66,22 +69,25 @@ asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<CFAsyncClie
 }
 
 asio::awaitable<void> ChunkData::uploadParts(const std::shared_ptr<CFAsyncClient> cfCli) const {
+
+    assert(!_parts.empty() && "Cannot upload empty chunk");
+
     // encode parts
     size_t size = 2; // reserve first 2 bytes (version)
     for(auto& [key, part] : _parts)
-        size += 12 + part.size();
+        size += PART_ID_SIZE + PART_LEN_SIZE + part.size();
 
     std::vector<uint8_t> data(size);
     size_t i = 2; // first two bytes reserved
     for(auto& [id, part] : _parts){
         // set id
-        std::memcpy(data.data() + i, &id, sizeof(uint64_t));
-        i += 8;
+        std::memcpy(data.data() + i, &id, PART_ID_SIZE);
+        i += PART_ID_SIZE;
 
         // set part len metadata
         uint32_t partLen = part.size();
-        std::memcpy(data.data() + i, &partLen, sizeof(uint32_t));
-        i += 4;
+        std::memcpy(data.data() + i, &partLen, PART_LEN_SIZE);
+        i += PART_LEN_SIZE;
 
         // set part
         std::memcpy(data.data() + i, part.data(), part.size());
