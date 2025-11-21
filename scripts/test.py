@@ -49,13 +49,15 @@ r = redis.Redis(
 )
 
 # Push chunk to queue
-r.lpush(REDIS_UPDATE_QUEUE, "l2_1d23")
+
 
 # Add plot to chunk's needs update list
 r.sadd(REDIS_UPDATE_NEEDS_UPDATE_PREFIX + "l2_1d23", "8693")
 
 
-# Store plot's update flags
-# flags = UpdateFlags()
-# r.set(REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + "8693", )
+# Store plot's update flagsREDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX
+flags = UpdateFlags()
+# r.sadd(REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + "8693", "HELLO");
+
+r.lpush(REDIS_UPDATE_QUEUE, "l2_1d23")
 
