@@ -59,8 +59,9 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_
         cv::Mat points(k, 3, CV_32F);    
         std::vector<uint16_t> colidxs(k); 
 
-        const cv::Vec3f worldPos = Utils::idxToVec3(Chunk::plotIdToPosIdx(id), VARS::MAIN_BUILD_SIZE);
-        const uint16_t buildSize = buildData[1];
+        cv::Vec3f worldPos = Utils::idxToVec3(Chunk::plotIdToPosIdx(id), VARS::MAIN_BUILD_SIZE);
+        worldPos[1] += 1.f;
+        const float buildSize = static_cast<float>(buildData[1]);
         const cv::Vec3f centerOffset(0.5f,0.5f,0.5f);
 
         for (size_t i = 0; i < k; ++i) {

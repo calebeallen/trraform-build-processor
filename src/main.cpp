@@ -88,17 +88,18 @@ asio::awaitable<void> processChunk(
     if (chunkId[0] != 'l' || (chunkId[0] == 'l' && splitId.first == 2)) {
         std::vector<std::vector<std::string>> flagSets;
         {
-            std::vector<std::string> args;
-            args.reserve(2 + needsUpdate.size());
-
-            args.push_back(R"(
+            static const std::string script = R"(
                 local results = {}
                 for i, key in ipairs(KEYS) do
                     results[i] = redis.call('SMEMBERS', key)
                 end
                 redis.call('DEL', unpack(KEYS))
                 return results
-            )");
+            )";
+
+            std::vector<std::string> args;
+            args.reserve(2 + needsUpdate.size());
+            args.push_back(script);
             args.push_back(std::to_string(needsUpdate.size()));
             for (const auto& id : needsUpdate)
                 args.push_back(VARS::REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + id);
@@ -161,31 +162,29 @@ asio::awaitable<void> processChunk(
     const auto nextChunkId = co_await chunk->update(cfCli);
     if (nextChunkId) {
         static const std::string script = R"(
-            local chunkId = ARGV[1]
-
-            local set_key = ARGV[3] .. chunkId
-            local existed = redis.call('EXISTS', set_key)
-            local added = redis.call('SADD', set_key, ARGV[2])
-
+            local existed = redis.call('EXISTS', KEYS[1])
+            local added = redis.call('SADD', KEYS[1], ARGV[1])
+            
             if existed == 0 and added > 0 then
-                redis.call('EXPIRE', set_key, ARGV[5])
-                local queue_key = ARGV[4]
-                redis.call('LPUSH', queue_key, chunkId)
+                redis.call('EXPIRE', KEYS[1], ARGV[3])
+                redis.call('LPUSH', KEYS[2], ARGV[2])
             end
         )";
 
         redis::request req;
         redis::response<int> res;
+
         req.push(
             "EVAL", 
             script, 
-            "0", 
-            *nextChunkId,
-            fmt::format("{:x}", splitId.second),
-            VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX,
+            "2",
+            VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + *nextChunkId,
             VARS::REDIS_UPDATE_QUEUE_PREFIX,
-            "1800" // 30 min expiry
+            fmt::format("{:x}", splitId.second),  // ARGV[1] - value
+            *nextChunkId,                          // ARGV[2] - chunkId
+            "1800"                                 // ARGV[3] - ttl
         );
+
         co_await redisCli.async_exec(req, res, asio::use_awaitable); 
     }
 
@@ -239,8 +238,10 @@ asio::awaitable<void> async_main() {
                 co_await redisBlockingConn.async_exec(req, resp, asio::use_awaitable);
 
                 const auto& result = std::get<0>(resp).value();
-                if (!result.has_value())
+                if (!result.has_value()) {
+                    pipelineSem.release();
                     continue;
+                }
 
                 chunkId = (*result)[1]; // [0] is queue name, [1] is the value
             }

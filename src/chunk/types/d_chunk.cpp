@@ -75,6 +75,8 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncC
         nlohmann::json json;
         std::span<const std::uint8_t> buildPart;
 
+        // TODO meta data update not working fix
+
         // metadata only means keep whatever is currently in the chunk and just change metadata field
         // this is because HeadObject is used for metadata only update, so obj.body won't exist
         // TODO: if ever a metadata only update is about to be queued, MUST first make sure that it won't overwrite a queued FULL update
@@ -88,30 +90,21 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncC
         else if (!flags.metadataOnly)
             buildPart = Plot::getBuildData(obj.body);
 
-        // const auto itv = obj.metadata.find("verified");
-        // if (itv == obj.metadata.end())
-        //     throw std::runtime_error("Plot missing verified metadata");
-        // const auto ito = obj.metadata.find("owner");
-        // if (ito == obj.metadata.end())
-        //     throw std::runtime_error("Plot missing owner metadata");
+        const auto itv = obj.metadata.find("verified");
+        if (itv == obj.metadata.end())
+            throw std::runtime_error("Plot missing verified metadata");
+        const auto ito = obj.metadata.find("owner");
+        if (ito == obj.metadata.end())
+            throw std::runtime_error("Plot missing owner metadata");
 
-        // bool verified = itv->second == "true";
-        // json["verified"] = verified;
-        // json["owner"] = ito->second;
-
-        // DUMMY DATA BELOW, UNCOMMENT ABOVE CODE
-        bool verified = true;
+        bool verified = itv->second == "true";
         json["verified"] = verified;
-        json["owner"] = "caleb";
+        json["owner"] = ito->second;
 
         // remove subscriber features if needed
         if (!verified) {
             json["link"] = "";
             json["linkTitle"] = "";
-
-            // if build data is greater than max size, remove build from world
-            if (Plot::getBuildSize(obj.body) > VARS::BUILD_SIZE_STD)
-                buildPart = Plot::getDefaultBuildData();
         }
 
         // repack plot data

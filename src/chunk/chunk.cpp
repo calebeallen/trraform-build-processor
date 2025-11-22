@@ -81,7 +81,7 @@ const std::vector<uint32_t>& Chunk::mapFwd(int layer, size_t idx) {
         return map[idx];
     }
         
-    throw std::runtime_error("Invalid layer");
+    assert(false && "Invalid layer");
 }
 
 uint32_t Chunk::mapBwd(int layer, size_t idx) {
@@ -124,10 +124,10 @@ uint32_t Chunk::mapBwd(int layer, size_t idx) {
         return map[idx];
     }
 
-    throw std::runtime_error("Invalid layer");
+    assert(false && "Invalid layer");
 }
 
-uint32_t Chunk::plotIdToPosIdx(uint32_t idx) {
+uint32_t Chunk::plotIdToPosIdx(uint32_t id) {
 
     static const std::array<uint32_t, VARS::L2_SIZE> map = []() {
         std::array<uint32_t, VARS::L2_SIZE> map;
@@ -145,6 +145,8 @@ uint32_t Chunk::plotIdToPosIdx(uint32_t idx) {
         return map;
     }();
 
-    return map[idx];
+    assert(id > 0 && id <= VARS::D0_PLOT_COUNT && "Plot id out of range");
+
+    return map[id-1];
 
 }
