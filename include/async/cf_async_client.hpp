@@ -56,6 +56,7 @@ public:
         const std::string& r2SecretKey,
         int concurrency
     );
+    ~CFAsyncClient();
     
     asio::awaitable<GetOutcome> getR2Object(const std::string& bucket, const std::string& key);
     asio::awaitable<GetOutcome> headR2Object(const std::string& bucket, const std::string& key);

@@ -4,6 +4,7 @@
 #include <fstream>    
 #include <stdexcept>
 #include <iterator>    
+#include <iostream>
 
 #include <nlohmann/json.hpp>
 
@@ -83,11 +84,12 @@ std::uint16_t Plot::getBuildSize(const std::vector<std::uint8_t>& plotData) {
 }
 
 std::vector<std::uint8_t> Plot::makePlotData(const nlohmann::json& json, const std::span<const uint8_t>& buildData) {
+     
     const std::string jsonData = json.dump();
     const std::uint32_t jsonLen = jsonData.size();
     const std::uint32_t buildLen = buildData.size();
     std::vector<std::uint8_t> plotData(jsonLen + buildLen + 8);
-
+   
     // set len prefixes
     std::memcpy(plotData.data(), &jsonLen, sizeof(std::uint32_t));
     std::memcpy(plotData.data() + jsonLen + 4, &buildLen, sizeof(std::uint32_t));
@@ -95,6 +97,6 @@ std::vector<std::uint8_t> Plot::makePlotData(const nlohmann::json& json, const s
     // set data
     std::memcpy(plotData.data() + 4, jsonData.data(), jsonLen);
     std::memcpy(plotData.data() + jsonLen + 8, buildData.data(), buildLen);
-
+  
     return plotData;
 }

@@ -55,7 +55,7 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_
             
         std::shuffle(build.begin(), build.end(), rng);
 
-        const size_t k = std::max(2ul, static_cast<size_t>(static_cast<float>(build.size()) * VARS::PC_SAMPLE_PERC));
+        const size_t k = std::max(2ul, static_cast<size_t>(std::sqrt(build.size())));
         cv::Mat points(k, 3, CV_32F);    
         std::vector<uint16_t> colidxs(k); 
 
@@ -76,6 +76,7 @@ asio::awaitable<std::optional<std::string>> BaseChunk::update(const std::shared_
 
         _pointClouds[id] = PointCloud{std::move(points), std::move(colidxs)};
     }
+  
 
     if (!_pointClouds.empty()) {
         co_await uploadPointCloud(cfCli);

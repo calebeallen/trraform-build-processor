@@ -50,6 +50,10 @@ CFAsyncClient::CFAsyncClient(
     );
 }
 
+CFAsyncClient::~CFAsyncClient() {
+    _threadPool.join();
+}
+
 asio::awaitable<GetOutcome> CFAsyncClient::getR2Object(
     const std::string& bucket, 
     const std::string& key

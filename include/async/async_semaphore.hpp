@@ -22,11 +22,3 @@ public:
         _channel.try_send(boost::system::error_code{});
     }
 };
-
-class AsyncSemaphoreGuard {
-private:
-    AsyncSemaphore& _sem;
-public:
-    AsyncSemaphoreGuard(AsyncSemaphore& sem) : _sem(sem) {};
-    ~AsyncSemaphoreGuard() { _sem.release(); };
-};

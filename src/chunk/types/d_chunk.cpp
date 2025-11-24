@@ -32,10 +32,10 @@ void DChunk::process() {
         const auto plotId = _needsUpdate[i];
 
         if (_updateFlags[i].noImageUpdate)
-            _updatedImages.emplace_back(std::nullopt);
+            _updatedImages.push_back(std::nullopt);
         else {
             const auto buildData = Plot::getBuildPart(_parts[plotId]);
-            _updatedImages.emplace_back(BuildImage::make(buildData));
+            _updatedImages.push_back(BuildImage::make(buildData));
         }
     }
 }
@@ -53,15 +53,18 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncC
     {
         std::vector<GetParams> requests;
         requests.reserve(_needsUpdate.size());
-        for(size_t i = 0; i < _needsUpdate.size(); ++i)
+        for(size_t i = 0; i < _needsUpdate.size(); ++i) {
             requests.push_back({
                 VARS::CF_PLOTS_BUCKET,
-                fmt::format("{:x}", _needsUpdate[i]),
-                _updateFlags[i].metadataOnly
+                // fmt::format("{:x}", _needsUpdate[i]),
+                "8694",
+                _updateFlags[i].metadataOnly || (_updateFlags[i].setDefaultBuild && _updateFlags[i].setDefaultJson)
             });
+        }
         updates = co_await cfCli->getManyR2Objects(std::move(requests));
     }
-     
+
+    
     // set new plot data
     for (size_t i = 0; i < _needsUpdate.size(); ++i) {
         const std::uint64_t plotId = _needsUpdate[i];
@@ -82,14 +85,19 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncC
         // TODO: if ever a metadata only update is about to be queued, MUST first make sure that it won't overwrite a queued FULL update
         if (flags.setDefaultJson)
             json = Plot::getDefaultJsonPart();
-        else if (!flags.metadataOnly)
+        else if (flags.metadataOnly)
+            json = Plot::getJsonPart(_parts[plotId]);
+        else
             json = Plot::getJsonPart(obj.body);
         
         if (flags.setDefaultBuild)
             buildPart = Plot::getDefaultBuildData();
-        else if (!flags.metadataOnly)
+        else if (flags.metadataOnly)
+            buildPart = Plot::getBuildData(_parts[plotId]);
+        else
             buildPart = Plot::getBuildData(obj.body);
 
+    
         const auto itv = obj.metadata.find("verified");
         if (itv == obj.metadata.end())
             throw std::runtime_error("Plot missing verified metadata");
@@ -109,7 +117,10 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncC
 
         // repack plot data
         _parts[plotId] = Plot::makePlotData(json, buildPart);
+         
     }
+
+    
 }
 
 asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<CFAsyncClient> cfCli) const {
@@ -128,7 +139,7 @@ asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<CFAsyncClient> 
             std::move(*imgData)
         });
     }
-
+    
     const auto results = co_await cfCli->putManyR2Objects(requests);
     for (const auto& res : results)
         if (res.err)

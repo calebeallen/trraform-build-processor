@@ -3,6 +3,7 @@
 # CHUNK: 1d23
 # PLOT: 8693 <-- hex
 
+import struct
 import redis
 import os
 from dotenv import load_dotenv
@@ -50,14 +51,39 @@ r = redis.Redis(
 
 # Push chunk to queue
 
+chunk_map = {} # from chunk to plot idx
 
-# Add plot to chunk's needs update list
-r.sadd(REDIS_UPDATE_NEEDS_UPDATE_PREFIX + "l2_1d23", "8693")
+with open("../static/cmap_l2.dat", "rb") as file:
+    bin = file.read()
+    n = len(bin) // 4
+    vals = list(struct.unpack(f'<{n}I', bin))
+    
+    j = 1
+    for i in range(0, n, 2):
+        p_id = vals[i]
+        if p_id not in chunk_map:
+            chunk_map[p_id] = []
 
+        chunk_map[p_id].append(j)
+        j += 1
 
-# Store plot's update flagsREDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX
-flags = UpdateFlags()
-# r.sadd(REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + "8693", "HELLO");
+print(chunk_map[0])
 
-r.lpush(REDIS_UPDATE_QUEUE, "l2_1d23")
+def flag_chunk(chunk_id):
+
+    chunk_id_str = f"l2_{hex(chunk_id)[2:]}"
+
+    # Add plot to chunk's needs update list
+    needs_update = [hex(plot_id)[2:] for plot_id in chunk_map[chunk_id]]
+
+    r.sadd(REDIS_UPDATE_NEEDS_UPDATE_PREFIX + chunk_id_str, *needs_update)
+
+    # Store plot's update flagsREDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX
+    flags = UpdateFlags()
+    # r.sadd(REDIS_UPDATE_NEEDS_UPDATE_FLAGS_PREFIX + "8693", "HELLO");
+
+    r.lpush(REDIS_UPDATE_QUEUE, chunk_id_str)
+
+for i in range(50):
+    flag_chunk(i)
 

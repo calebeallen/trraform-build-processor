@@ -88,6 +88,7 @@ void LChunk::process(){
 
     // compute low-resolution representations of the chunk
     for (const auto& id : _needsUpdate) {
+
         const PointCloud& pointCloud = _pointClouds[id];
         const cv::Mat& pnts = pointCloud.points;
         const size_t n = pnts.rows;
@@ -190,6 +191,7 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<CF
         co_return;
     }
 
+
     // format: | total entries | total points | header: [id,len] | points | color indices
     uint8_t* headerPtr = obj.body.data() + 2;
     uint32_t totalEntries, totalPoints;
@@ -227,6 +229,8 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<CF
         pntptr += n * VEC3F_SIZE;
         colptr += n * COLOR_IDX_SIZE;
     }
+
+    
 }
 
 boost::asio::awaitable<void> LChunk::uploadPointCloud(const std::shared_ptr<CFAsyncClient> cfCli) const {

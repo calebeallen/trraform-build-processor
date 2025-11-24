@@ -38,8 +38,10 @@ target_link_libraries(${PROJECT_NAME}
 
 # compile optimizations
 target_compile_options(${PROJECT_NAME} PRIVATE
-    -O0                      # No optimization
-    -g3                      # Fullest debug info
+    -O3                      # Full optimization
+    # -g3                      # Fullest debug info
+    -march=native
+    -mtune=native
     -Wall                    # Enable all warnings
     -Wextra                  # Enable extra warnings
     -Wpedantic               # Enable pedantic warnings
