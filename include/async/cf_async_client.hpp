@@ -48,12 +48,14 @@ class CFAsyncClient {
 private:
     std::shared_ptr<Aws::S3::S3Client> _s3Cli;
     asio::thread_pool _threadPool;
+    std::string _cfApiToken;
 
 public:
     CFAsyncClient(
         const std::string& r2EndPoint,
         const std::string& r2AccessKey,
         const std::string& r2SecretKey,
+        const std::string& cfApiToken,
         int concurrency
     );
     ~CFAsyncClient();
@@ -68,5 +70,6 @@ public:
     );
     asio::awaitable<std::vector<GetOutcome>> getManyR2Objects(std::vector<GetParams> requests);
     asio::awaitable<std::vector<PutOutcome>> putManyR2Objects(std::vector<PutParams> requests);
+    asio::awaitable<void> purgeCache(const std::vector<std::string>&& urls);
 
 };

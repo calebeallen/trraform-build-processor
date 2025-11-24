@@ -34,6 +34,7 @@
 #include "utils/redis_pool.hpp"
 #include "async/async_semaphore.hpp"
 #include "utils/delayed_updates.hpp"
+#include "utils/unique_queue.hpp"
 
 namespace redis = boost::redis;
 namespace asio = boost::asio;
@@ -57,11 +58,12 @@ public:
     };
 };
 
-static bool killFlag = false;
+static std::atomic<bool> killFlag(false);
+static std::shared_ptr<CFAsyncClient> cfCli;
+static UniqueQueue needsPurge;
 
 asio::awaitable<void> processChunk(
     RedisPool& redisPool,
-    const std::shared_ptr<CFAsyncClient>& cfCli,
     asio::thread_pool& cpuPool,
     DelayedUpdates& delayedUpdates,
     AsyncSemaphore& pipelineSem,
@@ -179,26 +181,51 @@ asio::awaitable<void> processChunk(
             const int64_t updateDelay = splitId.first-1 == 1 ? CONFIG::L1_UPDATE_DELAY_SEC : CONFIG::L0_UPDATE_DELAY_SEC;
             delayedUpdates.track(*nextChunkId, fmt::format("{:x}", splitId.second), updateDelay);
         }
+
+        // schedule chunk to be purged from cloudflare cache
+        needsPurge.push(chunkId);
     } catch (const std::exception& e) {
         std::cerr << "[ex] " << e.what() << "\n";
     }
     co_return;
 }
 
+asio::awaitable<void> purgeChunks() {
+    std::vector<std::string> urls;
+    const size_t n = std::min(needsPurge.size(), VARS::PURGE_URLS_LIMIT);
+    urls.reserve(n);
 
-asio::awaitable<void> async_main() {
+    for (size_t i = 0; i < n; ++i) {
+        std::cout << "purging " << needsPurge.front() << std::endl;
+        urls.push_back(VARS::CF_CHUNKS_BUCKET_URL + needsPurge.front());
+        needsPurge.pop();
+    }
+
+    co_await cfCli->purgeCache(std::move(urls));
+    co_return;
+}
+
+asio::awaitable<void> purge_loop() {
+    const auto exec = co_await asio::this_coro::executor;
+    asio::steady_timer timer(exec);
+
+    std::cout << "purge loop" << std::endl;
+
+    for (;;) {
+        if (killFlag.load(std::memory_order_relaxed))
+            break;
+        co_await purgeChunks();
+        timer.expires_after(std::chrono::milliseconds(VARS::PURGE_DELAY));
+        co_await timer.async_wait(asio::use_awaitable);
+    }
+    co_return;
+}
+
+asio::awaitable<void> main_loop() {
     const auto exec = co_await asio::this_coro::executor;
 
     // create thread pool with cores-1 threads
     asio::thread_pool cpuPool(std::max(1, static_cast<int>(std::thread::hardware_concurrency()) - 1));
-
-    // init Cloudflare helper
-    const std::shared_ptr<CFAsyncClient> cfCli = std::make_shared<CFAsyncClient>(
-        "https://1534f5e1cce37d41a018df4c9716751e.r2.cloudflarestorage.com",
-        std::getenv("CF_R2_ACCESS_KEY"),
-        std::getenv("CF_R2_SECRET_KEY"),
-        CONFIG::R2_CONNECTIONS
-    );
 
     // init Redis connection pool
     redis::config cfg;
@@ -221,7 +248,7 @@ asio::awaitable<void> async_main() {
 
     for (;;) {
         // if SIGTERM/SIGINT, clear pipeline
-        if (killFlag) {
+        if (killFlag.load(std::memory_order_relaxed)) {
             auto exec = co_await asio::this_coro::executor;
             asio::steady_timer timer(exec);
             std::cout << "Waiting for " << inPipeline.size() << " jobs to finish..." << std::endl;
@@ -229,6 +256,13 @@ asio::awaitable<void> async_main() {
             // poll until jobs finished
             while (inPipeline.size() > 0) {
                 timer.expires_after(std::chrono::milliseconds(100));
+                co_await timer.async_wait(asio::use_awaitable);
+            }
+            
+            // empty purge queue
+            while (needsPurge.size() > 0) {
+                co_await purgeChunks();
+                timer.expires_after(std::chrono::milliseconds(VARS::PURGE_DELAY));
                 co_await timer.async_wait(asio::use_awaitable);
             }
 
@@ -281,8 +315,7 @@ asio::awaitable<void> async_main() {
         // process chunk
         inPipeline.insert(chunkId);
         asio::co_spawn(exec, processChunk(
-            redisPool, 
-            cfCli, 
+            redisPool,
             cpuPool, 
             delayedUpdates,
             pipelineSem,
@@ -295,25 +328,24 @@ asio::awaitable<void> async_main() {
 
     std::cout << "Finished" << std::endl;
 
-    auto& ctx = static_cast<asio::io_context&>(exec.context());
-    ctx.stop();
     co_return;
 }
 
-extern "C" const char* __asan_default_options() {
-    return "detect_container_overflow=0";
-}
-
 int main() {
-    Aws::SDKOptions s3Opts;
-    Aws::InitAPI(s3Opts);
-
-    asio::thread_pool threadPool(std::max(1ul, static_cast<size_t>(std::thread::hardware_concurrency()) - 1));
-
     char* envc = std::getenv("ENV");
     std::string env = envc ? envc : "";
     if (env != "PROD")
         Utils::loadENV(".env");
+
+    Aws::SDKOptions s3Opts;
+    Aws::InitAPI(s3Opts);
+    cfCli = std::make_shared<CFAsyncClient>(
+        "https://1534f5e1cce37d41a018df4c9716751e.r2.cloudflarestorage.com",
+        std::getenv("CF_R2_ACCESS_KEY"),
+        std::getenv("CF_R2_SECRET_KEY"),
+        std::getenv("CF_API_TOKEN"),
+        CONFIG::R2_CONNECTIONS
+    );
 
     assert(CONFIG::PIPELINE_LIMIT > 1 && "Pipeline limit must be greater than 1");
 
@@ -325,12 +357,13 @@ int main() {
     signals.async_wait([](const boost::system::error_code& ec, int) {
         if (!ec) {
             std::cout << "Cleaning up..." << std::endl;
-            killFlag = true;
+            killFlag.store(true, std::memory_order_relaxed);
         }
     });
     
     // create coroutine for main loop
-    asio::co_spawn(ioc, async_main(), asio::detached);
+    asio::co_spawn(ioc, purge_loop(), asio::detached);
+    asio::co_spawn(ioc, main_loop(), asio::detached);
     ioc.run();
 
     Aws::ShutdownAPI(s3Opts);

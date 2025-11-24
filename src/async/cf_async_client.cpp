@@ -31,8 +31,9 @@ CFAsyncClient::CFAsyncClient(
     const std::string& r2EndPoint,
     const std::string& r2AccessKey,
     const std::string& r2SecretKey,
+    const std::string& cfApiToken,
     int concurrency
-) : _threadPool(asio::thread_pool(concurrency)) {
+) : _threadPool(asio::thread_pool(concurrency)), _cfApiToken(cfApiToken) {
     Aws::Client::ClientConfiguration config;
     config.region = "auto";
     config.endpointOverride = r2EndPoint;
@@ -213,48 +214,61 @@ asio::awaitable<std::vector<PutOutcome>> CFAsyncClient::putManyR2Objects(std::ve
     
 };
 
-// void CFAsyncClient::purgeCache(const std::vector<std::string>& urls) const {
+asio::awaitable<void> CFAsyncClient::purgeCache(const std::vector<std::string>&& urls) {
+    co_await asio::co_spawn(
+        _threadPool.get_executor(), 
+        [this, urls = std::move(urls)]() -> asio::awaitable<void> {
+            nlohmann::json payload;
+            nlohmann::json filesArray = nlohmann::json::array();
 
-//     nlohmann::json payload;
-//     nlohmann::json filesArray = nlohmann::json::array();
+            // Build the files array with proper structure
+            for (const auto& url : urls) {
+                filesArray.push_back({
+                    {"url", url},
+                    {"headers", {
+                        {"Origin", VARS::ORIGIN}
+                    }}
+                });
+            }
+            
+            payload["files"] = filesArray;
 
-//     for (const auto& url : urls) {
-//         filesArray.push_back({
-//             {"url", url},
-//             {"headers", {
-//                 {"Origin", VARS::ORIGIN}
-//             }}
-//         });
-//     }
-//     payload["files"] = filesArray;
+            static const std::string apiUrl = 
+                "https://api.cloudflare.com/client/v4/zones/" + 
+                std::string(VARS::CF_ZONE_ID) + "/purge_cache";
 
-//     std::string apiUrl = "https://api.cloudflare.com/client/v4/zones/" + VARS::CF_ZONE_ID + "/purge_cache";
-//     cpr::Response r = cpr::Post(
-//         cpr::Url{apiUrl},
-//         cpr::Header{
-//             {"Authorization", "Bearer " + _apiToken},
-//             {"Content-Type", "application/json"}
-//         },
-//         cpr::Body{payload.dump()}
-//     );
+            cpr::Response r = cpr::Post(
+                cpr::Url{apiUrl},
+                cpr::Header{
+                    {"Authorization", "Bearer " + _cfApiToken},
+                    {"Content-Type", "application/json"}
+                },
+                cpr::Body{payload.dump()}
+            );
 
-//     if (r.status_code != 200) {
-//         std::cerr << "API request failed with status code " + std::to_string(r.status_code) + ": " + r.text;
-//         return;
-//     }
+            if (r.status_code != 200) {
+                std::cerr << "API request failed with status code " 
+                         << r.status_code << ": " << r.text << std::endl;
+                co_return;
+            }
 
-//     try {
-//         nlohmann::json purgeRes = nlohmann::json::parse(r.text);
+            try {
+                nlohmann::json purgeRes = nlohmann::json::parse(r.text);
 
-//         if (!purgeRes.value("success", false)) {
-//             std::string errorMsg = "Cloudflare API reported a failure.";
-//             if (purgeRes.contains("errors")) {
-//                 errorMsg += " Errors: " + purgeRes["errors"].dump();
-//             }
-//             std::cerr << errorMsg;
-//         }
-//     } catch (const nlohmann::json::parse_error& e) {
-//         std::cerr << "Failed to parse JSON response: " + std::string(e.what());
-//     }
+                if (!purgeRes.value("success", false)) {
+                    std::string errorMsg = "Cloudflare API reported a failure.";
+                    if (purgeRes.contains("errors")) {
+                        errorMsg += " Errors: " + purgeRes["errors"].dump();
+                    }
+                    std::cerr << errorMsg << std::endl;
+                }
+            } catch (const nlohmann::json::parse_error& e) {
+                std::cerr << "Failed to parse JSON response: " 
+                         << e.what() << std::endl;
+            }
 
-// }
+            co_return;
+        },
+        asio::use_awaitable
+    );
+}

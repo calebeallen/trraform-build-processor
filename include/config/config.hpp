@@ -9,8 +9,8 @@ namespace CONFIG {
     inline constexpr size_t R2_CONNECTIONS = 50;
     // inline constexpr int64_t L1_UPDATE_DELAY_SEC = 300; // 10 mins
     // inline constexpr int64_t L0_UPDATE_DELAY_SEC = 3600; //1 hour
-    inline constexpr int64_t L1_UPDATE_DELAY_SEC = 1;
-    inline constexpr int64_t L0_UPDATE_DELAY_SEC = 1;
+    inline constexpr int64_t L1_UPDATE_DELAY_SEC = 10;
+    inline constexpr int64_t L0_UPDATE_DELAY_SEC = 20;
 }
 
 namespace VARS {
@@ -32,7 +32,11 @@ namespace VARS {
     inline constexpr auto CF_CHUNKS_BUCKET = "chunks-dev";
     inline constexpr auto CF_PLOTS_BUCKET = "plots-dev";
     inline constexpr auto CF_IMAGES_BUCKET = "build-images-dev";
-    inline constexpr auto CF_POINT_CLOUDS_BUCKET ="point-clouds-dev";
+    inline constexpr auto CF_POINT_CLOUDS_BUCKET = "point-clouds-dev";
+    inline constexpr auto CF_CHUNKS_BUCKET_URL = "https://chunks.trraform.com/";
+
+    inline constexpr size_t PURGE_URLS_LIMIT = 99;
+    inline constexpr size_t PURGE_DELAY = 1000; //milli-seconds
 
     inline constexpr auto REDIS_EXPIRE = "1800"; // 30 mins
     inline constexpr auto REDIS_UPDATE_QUEUE_PREFIX = "up:q:0"; // may add multi-level queue later
