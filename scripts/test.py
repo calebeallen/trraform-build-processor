@@ -84,6 +84,6 @@ def flag_chunk(chunk_id):
 
     r.lpush(REDIS_UPDATE_QUEUE, chunk_id_str)
 
-for i in range(50):
+for i in range(1):
     flag_chunk(i)
 

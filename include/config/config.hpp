@@ -7,6 +7,7 @@ namespace CONFIG {
     inline constexpr size_t PIPELINE_LIMIT = 25;
     inline constexpr size_t REDIS_CONNECTIONS = 4;
     inline constexpr size_t R2_CONNECTIONS = 50;
+    inline constexpr size_t R2_CACHE_SIZE = 32; // MB
     // inline constexpr int64_t L1_UPDATE_DELAY_SEC = 300; // 10 mins
     // inline constexpr int64_t L0_UPDATE_DELAY_SEC = 3600; //1 hour
     inline constexpr int64_t L1_UPDATE_DELAY_SEC = 10;

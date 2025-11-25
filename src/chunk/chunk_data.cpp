@@ -38,7 +38,8 @@ constexpr size_t PART_LEN_SIZE = sizeof(uint32_t);
 
 asio::awaitable<void> ChunkData::downloadParts(const std::shared_ptr<CFAsyncClient> cfCli, bool keepAll) {
   
-    auto obj = co_await cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId);
+    // get with cache
+    auto obj = co_await cfCli->getR2Object(VARS::CF_CHUNKS_BUCKET, _chunkId, true);
     if (obj.err) {
         if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
             throw std::runtime_error(obj.errMsg);
@@ -99,7 +100,8 @@ asio::awaitable<void> ChunkData::uploadParts(const std::shared_ptr<CFAsyncClient
         VARS::CF_CHUNKS_BUCKET, 
         _chunkId, 
         "application/octet-stream", 
-        std::move(data) 
+        std::move(data),
+        true
     );
 
     if (out.err)

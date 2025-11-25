@@ -29,7 +29,7 @@ void DChunk::process() {
     // create new images for plots that need update
     _updatedImages.reserve(_needsUpdate.size());
     for (size_t i = 0; i < _needsUpdate.size(); ++i) {
-        const auto plotId = _needsUpdate[i];
+        const auto& plotId = _needsUpdate[i];
 
         if (_updateFlags[i].noImageUpdate)
             _updatedImages.push_back(std::nullopt);
@@ -49,9 +49,9 @@ asio::awaitable<std::optional<std::string>> DChunk::update(const std::shared_ptr
 asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncClient> cfCli) {
 
     // pull updates
-    std::vector<GetOutcome> updates;
+    std::vector<CFAsyncClient::GetOutcome> updates;
     {
-        std::vector<GetParams> requests;
+        std::vector<CFAsyncClient::GetParams> requests;
         requests.reserve(_needsUpdate.size());
         for(size_t i = 0; i < _needsUpdate.size(); ++i) {
             requests.push_back({
@@ -67,7 +67,7 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncC
     
     // set new plot data
     for (size_t i = 0; i < _needsUpdate.size(); ++i) {
-        const std::uint64_t plotId = _needsUpdate[i];
+        const auto& plotId = _needsUpdate[i];
         const auto& flags = _updateFlags[i];
         const auto& obj = updates[i];
 
@@ -125,7 +125,7 @@ asio::awaitable<void> DChunk::downloadPlotUpdates(const std::shared_ptr<CFAsyncC
 
 asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<CFAsyncClient> cfCli) const {
 
-    std::vector<PutParams> requests; 
+    std::vector<CFAsyncClient::PutParams> requests; 
 
     for (size_t i = 0; i < _needsUpdate.size(); ++i) {
         const auto& imgData = _updatedImages[i];
@@ -140,7 +140,7 @@ asio::awaitable<void> DChunk::uploadImages(const std::shared_ptr<CFAsyncClient> 
         });
     }
     
-    const auto results = co_await cfCli->putManyR2Objects(requests);
+    const auto results = co_await cfCli->putManyR2Objects(std::move(requests));
     for (const auto& res : results)
         if (res.err)
             throw std::runtime_error(res.errMsg);

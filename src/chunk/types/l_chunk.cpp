@@ -23,14 +23,16 @@ asio::awaitable<void> LChunk::prep(const std::shared_ptr<CFAsyncClient> cfCli) {
     co_await downloadPointCloud(cfCli);
 
     // get updated point clouds
-    std::vector<GetOutcome> updates;
+    std::vector<CFAsyncClient::GetOutcome> updates;
     {
-        std::vector<GetParams> requests;
+        std::vector<CFAsyncClient::GetParams> requests;
         requests.reserve(_needsUpdate.size());
         for (const auto& id : _needsUpdate) 
             requests.push_back({
                 VARS::CF_POINT_CLOUDS_BUCKET,
-                Chunk::makeIdStr(_idl + 1, id, true)
+                Chunk::makeIdStr(_idl + 1, id, true),
+                false, // head only
+                true // use cache
             });
         
         updates = co_await cfCli->getManyR2Objects(std::move(requests));
@@ -183,14 +185,13 @@ asio::awaitable<std::optional<std::string>> LChunk::update(const std::shared_ptr
 }
 
 boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<CFAsyncClient> cfCli) {
-
-    auto obj = co_await cfCli->getR2Object(VARS::CF_POINT_CLOUDS_BUCKET, _chunkId); 
+    // get object with cache
+    auto obj = co_await cfCli->getR2Object(VARS::CF_POINT_CLOUDS_BUCKET, _chunkId, true); 
     if (obj.err) {
         if (obj.errType != Aws::S3::S3Errors::NO_SUCH_KEY)
             throw std::runtime_error(obj.errMsg);
         co_return;
     }
-
 
     // format: | total entries | total points | header: [id,len] | points | color indices
     uint8_t* headerPtr = obj.body.data() + 2;
@@ -228,9 +229,7 @@ boost::asio::awaitable<void> LChunk::downloadPointCloud(const std::shared_ptr<CF
 
         pntptr += n * VEC3F_SIZE;
         colptr += n * COLOR_IDX_SIZE;
-    }
-
-    
+    }    
 }
 
 boost::asio::awaitable<void> LChunk::uploadPointCloud(const std::shared_ptr<CFAsyncClient> cfCli) const {
@@ -286,7 +285,8 @@ boost::asio::awaitable<void> LChunk::uploadPointCloud(const std::shared_ptr<CFAs
         VARS::CF_POINT_CLOUDS_BUCKET,
         _chunkId,
         "application/octet-stream",
-        buf
+        std::move(buf),
+        true // use cache
     );
     if (out.err)
         throw std::runtime_error(out.errMsg);

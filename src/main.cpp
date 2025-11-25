@@ -76,14 +76,13 @@ asio::awaitable<void> processChunk(
         // get children that need update
         std::vector<std::string> needsUpdate;
         {
-            const std::string setKey = VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + chunkId;
-            
             static const std::string script = R"(
                 local m = redis.call('SMEMBERS', KEYS[1])
                 redis.call('DEL', KEYS[1])
                 return m
             )";
-            
+
+            const std::string setKey = VARS::REDIS_UPDATE_NEEDS_UPDATE_PREFIX + chunkId;
             redis::request req;
             req.push("EVAL", script, "1", setKey);
             
@@ -174,13 +173,14 @@ asio::awaitable<void> processChunk(
             chunk->process();
             co_return;
         }, asio::use_awaitable);
-
+        
         const auto nextChunkId = co_await chunk->update(cfCli);
         if (nextChunkId) {
             // schedule next layer to be updated
             const int64_t updateDelay = splitId.first-1 == 1 ? CONFIG::L1_UPDATE_DELAY_SEC : CONFIG::L0_UPDATE_DELAY_SEC;
             delayedUpdates.track(*nextChunkId, fmt::format("{:x}", splitId.second), updateDelay);
         }
+        std::cout << chunkId << std::endl;
 
         // schedule chunk to be purged from cloudflare cache
         needsPurge.push(chunkId);
@@ -191,10 +191,13 @@ asio::awaitable<void> processChunk(
 }
 
 asio::awaitable<void> purgeChunks() {
-    std::vector<std::string> urls;
-    const size_t n = std::min(needsPurge.size(), VARS::PURGE_URLS_LIMIT);
-    urls.reserve(n);
+    if (needsPurge.size() == 0)
+        co_return;
 
+    const size_t n = std::min(needsPurge.size(), VARS::PURGE_URLS_LIMIT);
+    std::vector<std::string> urls;
+    urls.reserve(n);
+    
     for (size_t i = 0; i < n; ++i) {
         std::cout << "purging " << needsPurge.front() << std::endl;
         urls.push_back(VARS::CF_CHUNKS_BUCKET_URL + needsPurge.front());
@@ -205,11 +208,9 @@ asio::awaitable<void> purgeChunks() {
     co_return;
 }
 
-asio::awaitable<void> purge_loop() {
+asio::awaitable<void> purgeLoop() {
     const auto exec = co_await asio::this_coro::executor;
     asio::steady_timer timer(exec);
-
-    std::cout << "purge loop" << std::endl;
 
     for (;;) {
         if (killFlag.load(std::memory_order_relaxed))
@@ -221,7 +222,7 @@ asio::awaitable<void> purge_loop() {
     co_return;
 }
 
-asio::awaitable<void> main_loop() {
+asio::awaitable<void> mainLoop() {
     const auto exec = co_await asio::this_coro::executor;
 
     // create thread pool with cores-1 threads
@@ -344,7 +345,9 @@ int main() {
         std::getenv("CF_R2_ACCESS_KEY"),
         std::getenv("CF_R2_SECRET_KEY"),
         std::getenv("CF_API_TOKEN"),
-        CONFIG::R2_CONNECTIONS
+        CONFIG::R2_CONNECTIONS,
+        true, // enable cache
+        CONFIG::R2_CACHE_SIZE * (1<<5)
     );
 
     assert(CONFIG::PIPELINE_LIMIT > 1 && "Pipeline limit must be greater than 1");
@@ -362,8 +365,8 @@ int main() {
     });
     
     // create coroutine for main loop
-    asio::co_spawn(ioc, purge_loop(), asio::detached);
-    asio::co_spawn(ioc, main_loop(), asio::detached);
+    asio::co_spawn(ioc, purgeLoop(), asio::detached);
+    asio::co_spawn(ioc, mainLoop(), asio::detached);
     ioc.run();
 
     Aws::ShutdownAPI(s3Opts);

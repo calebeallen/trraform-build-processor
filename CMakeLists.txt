@@ -39,7 +39,7 @@ target_link_libraries(${PROJECT_NAME}
 # compile optimizations
 target_compile_options(${PROJECT_NAME} PRIVATE
     -O3                      # Full optimization
-    # -g3                      # Fullest debug info
+    -g3                      # Fullest debug info
     -march=native
     -mtune=native
     -Wall                    # Enable all warnings
