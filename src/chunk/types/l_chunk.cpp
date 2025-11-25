@@ -82,7 +82,6 @@ asio::awaitable<void> LChunk::prep(const std::shared_ptr<CFAsyncClient> cfCli) {
         _pointClouds[_needsUpdate[i]] = PointCloud{std::move(points), std::move(colors)};
     }
     // save updated point cloud (not modified from here)
-
     co_await uploadPointCloud(cfCli);
 }
 
@@ -281,12 +280,13 @@ boost::asio::awaitable<void> LChunk::uploadPointCloud(const std::shared_ptr<CFAs
         colptr += n * COLOR_IDX_SIZE;
     }
 
+    const auto layer = Chunk::parseIdStr(_chunkId).first;
     auto out = co_await cfCli->putR2Object(
         VARS::CF_POINT_CLOUDS_BUCKET,
         _chunkId,
         "application/octet-stream",
         std::move(buf),
-        true // use cache
+        layer != 0 // write to cache
     );
     if (out.err)
         throw std::runtime_error(out.errMsg);
