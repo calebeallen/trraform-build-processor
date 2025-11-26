@@ -113,8 +113,8 @@ void LChunk::process(){
             }
         }
 
-        // compute number of boxes
-        size_t k = static_cast<size_t>(std::log10(static_cast<double>(n) + 1.)) + 1;
+        // number of boxes = log4(n+1)+1
+        size_t k = static_cast<size_t>(std::log(static_cast<double>(n) + 1.) / 2.) + 1;
 
         cv::Mat labels, centers;
         cv::kmeans(
