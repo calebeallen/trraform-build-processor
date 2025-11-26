@@ -24,7 +24,8 @@
             "includePath": [
                 "${default}",
                 "${workspaceFolder}/include/**",
-                "${workspaceFolder}/build/arm-debug/vcpkg_installed/arm64-osx/include"
+                "${workspaceFolder}/build/arm-debug/vcpkg_installed/arm64-osx/include",
+                "${workspaceFolder}/build/arm-debug/vcpkg_installed/arm64-osx/include/opencv4"
             ]
         }
     ],
